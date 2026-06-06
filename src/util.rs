@@ -12,6 +12,73 @@ pub fn now_datetime() -> String {
     format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}.{micros:06}")
 }
 
+/// Current UTC date only: "YYYY-MM-DD".
+pub fn now_date() -> String {
+    let (y, mo, d, _, _, _) = now_civil();
+    format!("{y:04}-{mo:02}-{d:02}")
+}
+
+/// Current UTC broken-down time (Y, M, D, h, m, s).
+pub fn now_civil() -> (i64, u32, u32, u32, u32, u32) {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    civil_from_unix(secs)
+}
+
+/// Day-of-year [1,366] for a civil date.
+pub fn day_of_year(y: i64, m: u32, d: u32) -> u32 {
+    let cum = [0u32, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+    let mut doy = cum[(m as usize).saturating_sub(1).min(11)] + d;
+    if leap && m > 2 {
+        doy += 1;
+    }
+    doy
+}
+
+/// Frappe `cint`: parse an int, falling back through float, default 0. Used for Check/Int casts.
+pub fn cint(s: &str) -> i64 {
+    let t = s.trim();
+    if let Ok(i) = t.parse::<i64>() {
+        return i;
+    }
+    if let Ok(f) = t.parse::<f64>() {
+        return f.trunc() as i64;
+    }
+    0
+}
+
+/// Frappe `flt`: parse a leading float, default 0.0.
+pub fn flt(s: &str) -> f64 {
+    s.trim().parse::<f64>().unwrap_or(0.0)
+}
+
+/// A UUIDv7-ish string: 48-bit unix-millis timestamp + random, formatted 8-4-4-4-12.
+/// Frappe uses uuid7 for `autoname = "UUID"`; we match the textual shape and version/variant bits.
+pub fn uuid7() -> String {
+    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let ms = dur.as_millis() as u64 & 0xFFFF_FFFF_FFFF;
+    let mut r = [0u8; 10];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        use std::io::Read;
+        let _ = f.read_exact(&mut r);
+    }
+    let mut b = [0u8; 16];
+    b[0] = (ms >> 40) as u8;
+    b[1] = (ms >> 32) as u8;
+    b[2] = (ms >> 24) as u8;
+    b[3] = (ms >> 16) as u8;
+    b[4] = (ms >> 8) as u8;
+    b[5] = ms as u8;
+    b[6..16].copy_from_slice(&r);
+    b[6] = 0x70 | (b[6] & 0x0F); // version 7
+    b[8] = 0x80 | (b[8] & 0x3F); // variant
+    let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+}
+
 /// Days-from-civil inverse (Howard Hinnant's algorithm) — unix seconds -> Y/M/D h:m:s (UTC).
 fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);

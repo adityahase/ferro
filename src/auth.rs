@@ -1,40 +1,85 @@
-//! Authentication + a minimal-but-real permission gate.
+//! Authentication + permission gate, mirroring Frappe's REST data-plane behavior.
 //!
-//! Token auth mirrors Frappe: `Authorization: token <api_key>:<api_secret>`. The key lives
-//! in `tabUser.api_key`; the secret in `__Auth` (doctype='User', fieldname='api_secret').
-//! Frappe stores the secret Fernet-encrypted (encrypted=1) using the site key; provisioning
-//! via `ferro provision-key` stores it as plaintext (encrypted=0) so the full path works
-//! without a crypto dependency. Decryption of encrypted=1 secrets is intentionally not done.
+//! Token auth: `Authorization: token <api_key>:<api_secret>` (also accepted as
+//! `Authorization: Basic base64(api_key:api_secret)`). The key lives in `tabUser.api_key`;
+//! the secret in `__Auth` (doctype='User', fieldname='api_secret'). Frappe stores that secret
+//! Fernet-encrypted (encrypted=1) with the site `encryption_key`; ferro decrypts it (see crypto.rs)
+//! and constant-time compares — so tokens issued by a normal Frappe site work. Plaintext secrets
+//! (encrypted=0, as written by `ferro provision-key`) are also accepted.
 //!
-//! Permissions are checked against `tabDocPerm` joined with the user's roles
-//! (`tabHas Role` + the implicit "All"/"Guest" roles), exactly as Frappe gates at permlevel 0.
+//! Permissions mirror `frappe.permissions` for the REST surface: doctype-level grants from
+//! `tabDocPerm` (or `tabCustom DocPerm` when the doctype is customized) joined with the user's
+//! roles (+ implicit "All"/"Guest"), with `if_owner` row scoping and `permlevel` field scoping.
 
+use crate::crypto;
+use crate::meta::Meta;
 use rusqlite::Connection;
+use std::collections::HashSet;
 
 pub struct Identity {
     pub user: String,
-    pub via: &'static str, // "token" | "guest" | "default"
+    #[allow(dead_code)]
+    pub via: &'static str, // "token" | "basic" | "default"
+}
+
+/// Result of resolving the request's identity.
+pub enum AuthOutcome {
+    /// A concrete identity (authenticated token/basic, or the unauthenticated default user).
+    Ok(Identity),
+    /// Credentials were supplied but are invalid — caller must return HTTP 401.
+    Unauthorized,
 }
 
 /// Resolve the request's user from the Authorization header.
-pub fn resolve_user(con: &Connection, auth_header: Option<&str>, default_user: &str) -> Identity {
-    if let Some(h) = auth_header {
-        let h = h.trim();
-        if let Some(rest) = h.strip_prefix("token ").or_else(|| h.strip_prefix("Token ")) {
-            if let Some((key, secret)) = rest.split_once(':') {
-                if let Some(user) = verify_token(con, key.trim(), secret.trim()) {
-                    return Identity { user, via: "token" };
+/// No header  -> default user (Guest for the server).
+/// Valid token/basic -> that user.
+/// Present-but-invalid credentials -> Unauthorized (401), matching Frappe's AuthenticationError.
+pub fn resolve_user(
+    con: &Connection,
+    auth_header: Option<&str>,
+    default_user: &str,
+    enc_key: Option<&str>,
+) -> AuthOutcome {
+    let h = match auth_header {
+        Some(h) if !h.trim().is_empty() => h.trim(),
+        _ => {
+            return AuthOutcome::Ok(Identity {
+                user: default_user.to_string(),
+                via: "default",
+            })
+        }
+    };
+
+    // token <key>:<secret>
+    if let Some(rest) = h.strip_prefix("token ").or_else(|| h.strip_prefix("Token ")) {
+        if let Some((key, secret)) = rest.split_once(':') {
+            if let Some(user) = verify_token(con, key.trim(), secret.trim(), enc_key) {
+                return AuthOutcome::Ok(Identity { user, via: "token" });
+            }
+        }
+        return AuthOutcome::Unauthorized;
+    }
+
+    // Basic base64(key:secret) — the API-key-over-Basic form Frappe accepts.
+    if let Some(rest) = h.strip_prefix("Basic ").or_else(|| h.strip_prefix("basic ")) {
+        if let Some(decoded) = crypto::b64url_decode_std(rest.trim()) {
+            if let Ok(s) = String::from_utf8(decoded) {
+                if let Some((key, secret)) = s.split_once(':') {
+                    if let Some(user) = verify_token(con, key.trim(), secret.trim(), enc_key) {
+                        return AuthOutcome::Ok(Identity { user, via: "basic" });
+                    }
                 }
             }
         }
-        // Unrecognized / failed auth -> Guest (Frappe treats bad creds as anonymous for reads).
-        return Identity { user: "Guest".to_string(), via: "guest" };
+        return AuthOutcome::Unauthorized;
     }
-    Identity { user: default_user.to_string(), via: "default" }
+
+    // Unknown auth scheme presented.
+    AuthOutcome::Unauthorized
 }
 
-fn verify_token(con: &Connection, key: &str, secret: &str) -> Option<String> {
-    if key.is_empty() {
+fn verify_token(con: &Connection, key: &str, secret: &str, enc_key: Option<&str>) -> Option<String> {
+    if key.is_empty() || secret.is_empty() {
         return None;
     }
     let user: String = con
@@ -52,22 +97,22 @@ fn verify_token(con: &Connection, key: &str, secret: &str) -> Option<String> {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .ok()?;
-    if encrypted == 0 && constant_time_eq(stored.as_bytes(), secret.as_bytes()) {
+
+    let ok = if encrypted == 0 {
+        crypto::ct_eq(stored.as_bytes(), secret.as_bytes())
+    } else if let Some(k) = enc_key {
+        match crypto::fernet_decrypt(k, &stored) {
+            Some(plain) => crypto::ct_eq(&plain, secret.as_bytes()),
+            None => false,
+        }
+    } else {
+        false
+    };
+    if ok {
         Some(user)
     } else {
         None
     }
-}
-
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
 }
 
 /// Permission types mapped to the tabDocPerm columns.
@@ -81,19 +126,24 @@ pub fn ptype_for_method(method: &str) -> &'static str {
     }
 }
 
-/// Does `user` have `ptype` permission on `doctype` at permlevel 0?
-pub fn can(con: &Connection, user: &str, doctype: &str, ptype: &str) -> bool {
-    if user == "Administrator" {
-        return true;
-    }
-    // ptype must be one of a known set (it is, from ptype_for_method) — safe to interpolate.
-    let col = match ptype {
-        "read" | "write" | "create" | "delete" | "submit" | "cancel" | "report" | "export" => ptype,
-        _ => "read",
-    };
+/// Outcome of a doctype-level permission check.
+pub struct Perm {
+    /// Any grant (owner-scoped or not) exists for this (user, ptype).
+    pub allowed: bool,
+    /// All grants are `if_owner` — access must be restricted to rows the user owns.
+    pub only_if_owner: bool,
+}
 
-    // Collect the user's roles (+ implicit ones).
+/// The 4 metadata doctypes Frappe never lets Custom DocPerm override (meta.py set_custom_permissions).
+fn custom_docperm_excluded(name: &str) -> bool {
+    matches!(name, "DocType" | "DocField" | "DocPerm" | "Custom DocPerm")
+}
+
+/// Collect the user's roles plus the implicit ones Frappe always grants.
+fn user_roles(con: &Connection, user: &str) -> Vec<String> {
     let mut roles: Vec<String> = vec!["All".to_string()];
+    // Frappe grants the Guest role to everyone for read of guest-allowed doctypes; the explicit
+    // Guest user always has it. We add it for Guest only (others get All).
     if user == "Guest" {
         roles.push("Guest".to_string());
     }
@@ -106,21 +156,102 @@ pub fn can(con: &Connection, user: &str, doctype: &str, ptype: &str) -> bool {
             }
         }
     }
+    roles
+}
 
+/// Which permission table applies to this doctype: Custom DocPerm (if customized) else DocPerm.
+fn perm_table(con: &Connection, meta: &Meta) -> &'static str {
+    if meta.istable || custom_docperm_excluded(&meta.name) {
+        return "tabDocPerm";
+    }
+    let has_custom: bool = con
+        .query_row(
+            "SELECT 1 FROM \"tabCustom DocPerm\" WHERE parent=?1 LIMIT 1",
+            [&meta.name],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if has_custom {
+        "tabCustom DocPerm"
+    } else {
+        "tabDocPerm"
+    }
+}
+
+/// Doctype-level permission, with if_owner detection. Administrator is unconditionally allowed.
+pub fn permission(con: &Connection, meta: &Meta, user: &str, ptype: &str) -> Perm {
+    if user == "Administrator" {
+        return Perm {
+            allowed: true,
+            only_if_owner: false,
+        };
+    }
+    let col = match ptype {
+        "read" | "write" | "create" | "delete" | "submit" | "cancel" | "report" | "export" => ptype,
+        _ => "read",
+    };
+    let roles = user_roles(con, user);
     let placeholders = vec!["?"; roles.len()].join(",");
+    let table = perm_table(con, meta);
+    // Count unconditional vs owner-only grants in one query.
     let sql = format!(
-        "SELECT COUNT(*) FROM \"tabDocPerm\" \
+        "SELECT \
+           COALESCE(SUM(CASE WHEN COALESCE(if_owner,0)=0 THEN 1 ELSE 0 END),0), \
+           COALESCE(SUM(CASE WHEN COALESCE(if_owner,0)=1 THEN 1 ELSE 0 END),0) \
+         FROM \"{table}\" \
          WHERE parent=? AND COALESCE(permlevel,0)=0 AND COALESCE(\"{col}\",0)=1 \
-         AND role IN ({placeholders})"
+           AND role IN ({placeholders})"
     );
     let mut binds: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(roles.len() + 1);
-    binds.push(&doctype);
+    let dt = &meta.name;
+    binds.push(dt);
     for r in &roles {
         binds.push(r);
     }
-    con.query_row(&sql, binds.as_slice(), |r| r.get::<_, i64>(0))
-        .map(|n| n > 0)
-        .unwrap_or(false)
+    let (uncond, owner_only): (i64, i64) = con
+        .query_row(&sql, binds.as_slice(), |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap_or((0, 0));
+
+    Perm {
+        allowed: uncond > 0 || owner_only > 0,
+        // create is never owner-scoped in Frappe
+        only_if_owner: uncond == 0 && owner_only > 0 && col != "create",
+    }
+}
+
+/// Lowercased owner-equality check used for if_owner scoping (Frappe lowercases both sides).
+pub fn owns(owner: &str, user: &str) -> bool {
+    owner.to_lowercase() == user.to_lowercase()
+}
+
+/// The set of permlevels the user may READ for this doctype. `None` ⇒ all (Administrator).
+pub fn readable_permlevels(con: &Connection, meta: &Meta, user: &str) -> Option<HashSet<i64>> {
+    if user == "Administrator" {
+        return None;
+    }
+    let roles = user_roles(con, user);
+    let placeholders = vec!["?"; roles.len()].join(",");
+    let table = perm_table(con, meta);
+    let sql = format!(
+        "SELECT DISTINCT COALESCE(permlevel,0) FROM \"{table}\" \
+         WHERE parent=? AND COALESCE(read,0)=1 AND role IN ({placeholders})"
+    );
+    let mut binds: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(roles.len() + 1);
+    let dt = &meta.name;
+    binds.push(dt);
+    for r in &roles {
+        binds.push(r);
+    }
+    let mut set = HashSet::new();
+    if let Ok(mut stmt) = con.prepare(&sql) {
+        if let Ok(rows) = stmt.query_map(binds.as_slice(), |r| r.get::<_, i64>(0)) {
+            for r in rows.flatten() {
+                set.insert(r);
+            }
+        }
+    }
+    set.insert(0); // permlevel-0 fields are always readable when read is granted at all
+    Some(set)
 }
 
 /// Provision an API key pair for a user (sets tabUser.api_key, upserts __Auth secret as plaintext).

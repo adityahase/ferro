@@ -1,21 +1,64 @@
 //! Document ORM: the Rust analogue of frappe.client / frappe.model.db_query.
 //! Reads and writes the *same* `tab<DocType>` tables Frappe created.
 
-use crate::meta::{quote_ident, Meta};
+use crate::meta::{quote_ident, DocField, Meta};
+use crate::naming;
 use crate::util;
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::Connection;
 use serde_json::{Map, Value};
+use std::collections::HashSet;
 
 #[derive(Debug)]
 pub enum OrmError {
-    NotFound(String),         // -> 404
-    Validation(String),       // -> 417
+    NotFound(String),   // -> 404
+    Validation(String), // -> 417
+    Duplicate(String),  // -> 409
     Db(rusqlite::Error),
 }
 impl From<rusqlite::Error> for OrmError {
     fn from(e: rusqlite::Error) -> Self {
         OrmError::Db(e)
+    }
+}
+
+/// Field-level read access control derived from the user's DocPerm permlevels.
+/// `None` permlevels ⇒ read everything (Administrator). Otherwise only fields whose
+/// docfield permlevel is in the set are returned/queryable (permlevel-0 always allowed).
+pub struct ReadAcl {
+    pub permlevels: Option<HashSet<i64>>,
+}
+impl ReadAcl {
+    pub fn all() -> Self {
+        ReadAcl { permlevels: None }
+    }
+    /// May the user read this physical column? Standard/custom columns with no docfield are
+    /// permlevel 0 (always readable when any read is granted).
+    pub fn can_read(&self, meta: &Meta, field: &str) -> bool {
+        match &self.permlevels {
+            None => true,
+            Some(set) => {
+                let pl = meta.field(field).map(|f| f.permlevel).unwrap_or(0);
+                set.contains(&pl)
+            }
+        }
+    }
+}
+
+/// Run a closure inside an IMMEDIATE transaction; commit on Ok, rollback on Err.
+/// All multi-statement writes use this so a mid-sequence failure never leaves a partial doc,
+/// and the naming-series counter advances atomically with the row it names.
+fn with_txn<T>(con: &Connection, f: impl FnOnce() -> Result<T, OrmError>) -> Result<T, OrmError> {
+    con.execute_batch("BEGIN IMMEDIATE")?;
+    match f() {
+        Ok(v) => {
+            con.execute_batch("COMMIT")?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = con.execute_batch("ROLLBACK");
+            Err(e)
+        }
     }
 }
 
@@ -48,6 +91,21 @@ fn json_to_sql(v: &Value) -> SqlValue {
     }
 }
 
+/// Cast a stored single-value string to JSON per its fieldtype (mirrors Frappe as_dict casting).
+fn cast_by_fieldtype(field: Option<&DocField>, raw: Option<String>) -> Value {
+    let raw = match raw {
+        Some(s) => s,
+        None => return Value::Null,
+    };
+    let ft = field.map(|f| f.fieldtype.as_str()).unwrap_or("Data");
+    match ft {
+        "Check" => Value::from(if util::cint(&raw) != 0 { 1 } else { 0 }),
+        "Int" | "Long Int" => Value::from(util::cint(&raw)),
+        "Float" | "Currency" | "Percent" => Value::from(util::flt(&raw)),
+        _ => Value::from(raw),
+    }
+}
+
 /// Parsed list query (from /api/resource/<doctype> query string).
 pub struct ListQuery {
     pub fields: Vec<String>,
@@ -77,8 +135,18 @@ struct Clause {
     binds: Vec<SqlValue>,
 }
 
-fn op_clause(meta: &Meta, field: &str, op: &str, val: &Value) -> Result<Clause, OrmError> {
-    if !meta.has_column(field) {
+/// Split an `in`/`not in` value: arrays pass through; a comma-separated string becomes a list
+/// (Frappe's db_query does this for string filter values).
+fn in_values(val: &Value) -> Vec<Value> {
+    match val {
+        Value::Array(a) => a.clone(),
+        Value::String(s) => s.split(',').map(|p| Value::from(p.trim().to_string())).collect(),
+        other => vec![other.clone()],
+    }
+}
+
+fn op_clause(meta: &Meta, acl: &ReadAcl, field: &str, op: &str, val: &Value) -> Result<Clause, OrmError> {
+    if !meta.has_column(field) || !acl.can_read(meta, field) {
         return Err(OrmError::Validation(format!(
             "Unknown field '{field}' in filters for {}",
             meta.name
@@ -101,7 +169,7 @@ fn op_clause(meta: &Meta, field: &str, op: &str, val: &Value) -> Result<Clause, 
             format!("{col} NOT LIKE ?")
         }
         "in" => {
-            let arr = val.as_array().cloned().unwrap_or_else(|| vec![val.clone()]);
+            let arr = in_values(val);
             if arr.is_empty() {
                 return Ok(Clause { sql: "0".into(), binds });
             }
@@ -112,7 +180,7 @@ fn op_clause(meta: &Meta, field: &str, op: &str, val: &Value) -> Result<Clause, 
             format!("{col} IN ({qs})")
         }
         "not in" => {
-            let arr = val.as_array().cloned().unwrap_or_else(|| vec![val.clone()]);
+            let arr = in_values(val);
             if arr.is_empty() {
                 return Ok(Clause { sql: "1".into(), binds });
             }
@@ -139,9 +207,7 @@ fn op_clause(meta: &Meta, field: &str, op: &str, val: &Value) -> Result<Clause, 
                 format!("({col} IS NULL OR {col} = '')")
             }
         }
-        other => {
-            return Err(OrmError::Validation(format!("Unsupported operator '{other}'")))
-        }
+        other => return Err(OrmError::Validation(format!("Unsupported operator '{other}'"))),
     };
     Ok(Clause { sql, binds })
 }
@@ -149,21 +215,17 @@ fn op_clause(meta: &Meta, field: &str, op: &str, val: &Value) -> Result<Clause, 
 /// Turn a Frappe filters value into clauses. Supports:
 ///   [["field","op","value"], ...]  and  [["DocType","field","op","value"], ...]
 ///   {"field": value}  and  {"field": ["op", value]}
-fn parse_filters(meta: &Meta, filters: &Value) -> Result<Vec<Clause>, OrmError> {
+fn parse_filters(meta: &Meta, acl: &ReadAcl, filters: &Value) -> Result<Vec<Clause>, OrmError> {
     let mut clauses = Vec::new();
     match filters {
         Value::Null => {}
         Value::Array(arr) => {
             for cond in arr {
-                let c = cond.as_array().ok_or_else(|| {
-                    OrmError::Validation("each filter must be a list".into())
-                })?;
+                let c = cond
+                    .as_array()
+                    .ok_or_else(|| OrmError::Validation("each filter must be a list".into()))?;
                 let (field, op, val) = match c.len() {
-                    2 => (
-                        c[0].as_str().unwrap_or_default(),
-                        "=",
-                        c[1].clone(),
-                    ),
+                    2 => (c[0].as_str().unwrap_or_default(), "=", c[1].clone()),
                     3 => (
                         c[0].as_str().unwrap_or_default(),
                         c[1].as_str().unwrap_or("="),
@@ -177,7 +239,7 @@ fn parse_filters(meta: &Meta, filters: &Value) -> Result<Vec<Clause>, OrmError> 
                     ),
                     _ => return Err(OrmError::Validation("bad filter arity".into())),
                 };
-                clauses.push(op_clause(meta, field, op, &val)?);
+                clauses.push(op_clause(meta, acl, field, op, &val)?);
             }
         }
         Value::Object(obj) => {
@@ -185,11 +247,11 @@ fn parse_filters(meta: &Meta, filters: &Value) -> Result<Vec<Clause>, OrmError> 
                 if let Some(pair) = v.as_array() {
                     if pair.len() == 2 {
                         let op = pair[0].as_str().unwrap_or("=");
-                        clauses.push(op_clause(meta, field, op, &pair[1])?);
+                        clauses.push(op_clause(meta, acl, field, op, &pair[1])?);
                         continue;
                     }
                 }
-                clauses.push(op_clause(meta, field, "=", v)?);
+                clauses.push(op_clause(meta, acl, field, "=", v)?);
             }
         }
         _ => return Err(OrmError::Validation("filters must be a list or object".into())),
@@ -197,8 +259,7 @@ fn parse_filters(meta: &Meta, filters: &Value) -> Result<Vec<Clause>, OrmError> 
     Ok(clauses)
 }
 
-fn validate_order_by(meta: &Meta, order_by: &str) -> Result<String, OrmError> {
-    // "field dir, field2 dir2" -> validated "col" DIR, ...
+fn validate_order_by(meta: &Meta, acl: &ReadAcl, order_by: &str) -> Result<String, OrmError> {
     let mut parts = Vec::new();
     for term in order_by.split(',') {
         let term = term.trim();
@@ -207,11 +268,10 @@ fn validate_order_by(meta: &Meta, order_by: &str) -> Result<String, OrmError> {
         }
         let mut it = term.split_whitespace();
         let field = it.next().unwrap_or("");
-        // allow "tabX.field" -> strip table-qualifier to the bare field
         let field = field.rsplit('.').next().unwrap_or(field).trim_matches('`');
         let dir = it.next().unwrap_or("asc").to_lowercase();
         let dir = if dir == "desc" { "DESC" } else { "ASC" };
-        if !meta.has_column(field) {
+        if !meta.has_column(field) || !acl.can_read(meta, field) {
             return Err(OrmError::Validation(format!("Unknown order_by field '{field}'")));
         }
         parts.push(format!("{} {}", quote_ident(field), dir));
@@ -224,24 +284,37 @@ fn validate_order_by(meta: &Meta, order_by: &str) -> Result<String, OrmError> {
 }
 
 /// GET /api/resource/<doctype> — returns an array of row objects.
-pub fn get_list(con: &Connection, meta: &Meta, q: &ListQuery) -> Result<Value, OrmError> {
-    // Validate & quote selected fields.
+/// `owner_scope` (Some(user)) ANDs an `owner = user` constraint, for if_owner permission scoping.
+pub fn get_list(
+    con: &Connection,
+    meta: &Meta,
+    acl: &ReadAcl,
+    q: &ListQuery,
+    owner_scope: Option<&str>,
+) -> Result<Value, OrmError> {
+    // Virtual doctypes have no table; without a controller we can only return an empty set.
+    if meta.is_virtual {
+        return Ok(Value::Array(vec![]));
+    }
+
+    // Validate & quote selected fields, honoring permlevel.
     let mut select_cols = Vec::new();
     for f in &q.fields {
         let f = f.trim().trim_matches('`');
         let f = f.rsplit('.').next().unwrap_or(f);
         if f == "*" {
-            // expand to all physical columns
             for c in &meta.columns {
-                select_cols.push(quote_ident(c));
+                if acl.can_read(meta, c) {
+                    select_cols.push(quote_ident(c));
+                }
             }
             continue;
         }
         if !meta.has_column(f) {
-            return Err(OrmError::Validation(format!(
-                "Unknown field '{f}' for {}",
-                meta.name
-            )));
+            return Err(OrmError::Validation(format!("Unknown field '{f}' for {}", meta.name)));
+        }
+        if !acl.can_read(meta, f) {
+            continue; // silently drop fields the user can't read at this permlevel (Frappe behavior)
         }
         select_cols.push(quote_ident(f));
     }
@@ -251,14 +324,20 @@ pub fn get_list(con: &Connection, meta: &Meta, q: &ListQuery) -> Result<Value, O
 
     let mut where_parts = Vec::new();
     let mut binds: Vec<SqlValue> = Vec::new();
-    for c in parse_filters(meta, &q.filters)? {
+    if let Some(owner) = owner_scope {
+        if meta.has_column("owner") {
+            where_parts.push(format!("{} = ?", quote_ident("owner")));
+            binds.push(SqlValue::Text(owner.to_string()));
+        }
+    }
+    for c in parse_filters(meta, acl, &q.filters)? {
         where_parts.push(c.sql);
         binds.extend(c.binds);
     }
     let and_sql = where_parts.join(" AND ");
 
     let mut or_parts = Vec::new();
-    for c in parse_filters(meta, &q.or_filters)? {
+    for c in parse_filters(meta, acl, &q.or_filters)? {
         or_parts.push(c.sql);
         binds.extend(c.binds);
     }
@@ -273,7 +352,7 @@ pub fn get_list(con: &Connection, meta: &Meta, q: &ListQuery) -> Result<Value, O
     }
 
     let order = match &q.order_by {
-        Some(o) => validate_order_by(meta, o)?,
+        Some(o) => validate_order_by(meta, acl, o)?,
         None => format!(
             "{} {}",
             quote_ident(&meta.sort_field),
@@ -281,14 +360,25 @@ pub fn get_list(con: &Connection, meta: &Meta, q: &ListQuery) -> Result<Value, O
         ),
     };
 
+    // limit_page_length <= 0 means UNLIMITED in Frappe (db_query: falsy -> no LIMIT clause).
+    // SQLite expresses "no limit, with offset" as `LIMIT -1 OFFSET n`.
+    let (limit_sql, lim_bind) = if q.limit_page_length <= 0 {
+        ("LIMIT -1 OFFSET ?".to_string(), None)
+    } else {
+        ("LIMIT ? OFFSET ?".to_string(), Some(q.limit_page_length))
+    };
+
     let sql = format!(
-        "SELECT {} FROM {}{} ORDER BY {} LIMIT ? OFFSET ?",
+        "SELECT {} FROM {}{} ORDER BY {} {}",
         select_cols.join(", "),
         quote_ident(&meta.table),
         where_clause,
-        order
+        order,
+        limit_sql
     );
-    binds.push(SqlValue::Integer(q.limit_page_length.max(0)));
+    if let Some(l) = lim_bind {
+        binds.push(SqlValue::Integer(l));
+    }
     binds.push(SqlValue::Integer(q.limit_start.max(0)));
 
     let mut stmt = con.prepare(&sql)?;
@@ -307,13 +397,28 @@ pub fn get_list(con: &Connection, meta: &Meta, q: &ListQuery) -> Result<Value, O
     Ok(Value::Array(out))
 }
 
-/// Read one full document (all columns + child tables). For single doctypes, reads tabSingles.
-pub fn get_doc(con: &Connection, meta: &Meta, name: &str) -> Result<Value, OrmError> {
+/// Read one full document (all readable columns + child tables). For singles, reads tabSingles.
+pub fn get_doc(con: &Connection, meta: &Meta, acl: &ReadAcl, name: &str) -> Result<Value, OrmError> {
     if meta.issingle {
-        return get_single(con, meta);
+        return get_single(con, meta, acl);
     }
+    if meta.is_virtual {
+        return Err(OrmError::NotFound(format!("{} {}", meta.name, name)));
+    }
+
+    // Explicit readable column list (replaces SELECT * so higher-permlevel columns never leak).
+    let readable: Vec<String> = {
+        let mut v: Vec<String> = meta.columns.iter().filter(|c| acl.can_read(meta, c)).cloned().collect();
+        v.sort();
+        if v.is_empty() {
+            v.push("name".to_string());
+        }
+        v
+    };
+    let select = readable.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
     let sql = format!(
-        "SELECT * FROM {} WHERE {} = ?1",
+        "SELECT {} FROM {} WHERE {} = ?1",
+        select,
         quote_ident(&meta.table),
         quote_ident("name")
     );
@@ -332,8 +437,11 @@ pub fn get_doc(con: &Connection, meta: &Meta, name: &str) -> Result<Value, OrmEr
     drop(rows);
     drop(stmt);
 
-    // Child tables.
+    // Child tables (only those the user can read).
     for cf in meta.child_tables() {
+        if !acl.can_read(meta, &cf.fieldname) {
+            continue;
+        }
         let child_dt = match &cf.options {
             Some(o) if !o.is_empty() => o,
             _ => continue,
@@ -351,17 +459,14 @@ pub fn get_doc(con: &Connection, meta: &Meta, name: &str) -> Result<Value, OrmEr
             Err(_) => continue, // child table may not exist; skip gracefully
         };
         let cnames: Vec<String> = cstmt.column_names().iter().map(|s| s.to_string()).collect();
-        let crows = cstmt.query_map(
-            rusqlite::params![name, meta.name, cf.fieldname],
-            |row| {
-                let mut o = Map::new();
-                o.insert("doctype".into(), Value::from(child_dt.clone()));
-                for (i, cn) in cnames.iter().enumerate() {
-                    o.insert(cn.clone(), cell_to_json(row.get_ref(i)?));
-                }
-                Ok(Value::Object(o))
-            },
-        )?;
+        let crows = cstmt.query_map(rusqlite::params![name, meta.name, cf.fieldname], |row| {
+            let mut o = Map::new();
+            o.insert("doctype".into(), Value::from(child_dt.clone()));
+            for (i, cn) in cnames.iter().enumerate() {
+                o.insert(cn.clone(), cell_to_json(row.get_ref(i)?));
+            }
+            Ok(Value::Object(o))
+        })?;
         let mut arr = Vec::new();
         for r in crows {
             arr.push(r?);
@@ -372,111 +477,201 @@ pub fn get_doc(con: &Connection, meta: &Meta, name: &str) -> Result<Value, OrmEr
     Ok(Value::Object(obj))
 }
 
-fn get_single(con: &Connection, meta: &Meta) -> Result<Value, OrmError> {
-    let mut stmt = con.prepare(
-        "SELECT field, value FROM \"tabSingles\" WHERE doctype = ?1",
-    )?;
+fn get_single(con: &Connection, meta: &Meta, acl: &ReadAcl) -> Result<Value, OrmError> {
+    let mut stmt = con.prepare("SELECT field, value FROM \"tabSingles\" WHERE doctype = ?1")?;
     let rows = stmt.query_map([&meta.name], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
     })?;
     let mut obj = Map::new();
     obj.insert("doctype".into(), Value::from(meta.name.clone()));
     obj.insert("name".into(), Value::from(meta.name.clone()));
-    let mut any = false;
     for r in rows {
         let (field, value) = r?;
-        any = true;
-        obj.insert(field, value.map(Value::from).unwrap_or(Value::Null));
+        if field == "name" || field == "doctype" {
+            continue;
+        }
+        if !acl.can_read(meta, &field) {
+            continue;
+        }
+        obj.insert(field.clone(), cast_by_fieldtype(meta.field(&field), value));
     }
-    if !any {
-        // a single with no stored values is still a valid (empty) document in Frappe
+    // Standard fields Frappe always exposes on a single, defaulted when unset.
+    for (k, dv) in [("docstatus", Value::from(0)), ("idx", Value::from(0))] {
+        obj.entry(k.to_string()).or_insert(dv);
     }
     Ok(Value::Object(obj))
 }
+
+/// Compute a docfield's default value for insert (mirrors create_new._set_default_values intent).
+fn default_for(df: &DocField, user: &str) -> Option<SqlValue> {
+    if let Some(def) = &df.default {
+        let d = def.trim();
+        if !d.is_empty() {
+            if d.starts_with(':') {
+                return None; // cross-document default (e.g. ":Company") — out of REST scope
+            }
+            let v = match d {
+                "__user" => user.to_string(),
+                "Today" => util::now_date(),
+                "now" | "Now" => util::now_datetime(),
+                _ => d.to_string(),
+            };
+            return Some(match df.fieldtype.as_str() {
+                "Check" => SqlValue::Integer(if util::cint(&v) != 0 { 1 } else { 0 }),
+                "Int" | "Long Int" => SqlValue::Integer(util::cint(&v)),
+                _ => SqlValue::Text(v),
+            });
+        }
+    }
+    // Select: Frappe defaults to the first option line if it is a real value.
+    if df.fieldtype == "Select" {
+        if let Some(opts) = &df.options {
+            if let Some(first) = opts.lines().next() {
+                let first = first.trim();
+                if !first.is_empty() && first != "[Select]" && first != "Loading..." {
+                    return Some(SqlValue::Text(first.to_string()));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// True when a bound value counts as "present" for required-field validation.
+fn is_nonempty(v: &SqlValue) -> bool {
+    match v {
+        SqlValue::Null => false,
+        SqlValue::Text(s) => !s.is_empty(),
+        _ => true,
+    }
+}
+
+const SYSTEM_INSERT_FIELDS: &[&str] = &["owner", "creation", "modified", "modified_by", "docstatus", "idx"];
 
 /// INSERT a new document. Returns the created doc.
 pub fn insert(
     con: &Connection,
     meta: &Meta,
+    acl: &ReadAcl,
     data: &Map<String, Value>,
     user: &str,
 ) -> Result<Value, OrmError> {
     if meta.issingle {
-        return insert_single(con, meta, data, user);
+        return insert_single(con, meta, acl, data, user);
     }
-    let now = util::now_datetime();
+    if meta.is_virtual {
+        return Err(OrmError::Validation(format!("Cannot create virtual DocType {}", meta.name)));
+    }
 
-    // Resolve document name.
-    let name = resolve_name(con, meta, data)?;
+    let name = with_txn(con, || {
+        let now = util::now_datetime();
+        let name = naming::resolve_name(con, meta, data)?;
 
-    // Build column/value pairs from payload, restricted to real columns.
-    let mut cols: Vec<String> = Vec::new();
-    let mut binds: Vec<SqlValue> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+        let mut cols: Vec<String> = Vec::new();
+        let mut binds: Vec<SqlValue> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        // track values for required-field validation
+        let mut values: std::collections::HashMap<String, SqlValue> = std::collections::HashMap::new();
 
-    let put = |cols: &mut Vec<String>, binds: &mut Vec<SqlValue>, seen: &mut std::collections::HashSet<String>, k: &str, v: SqlValue| {
-        if seen.insert(k.to_string()) {
-            cols.push(quote_ident(k));
-            binds.push(v);
+        // standalone helper so it doesn't capture `seen`/`values` (we read them below)
+        fn put(
+            cols: &mut Vec<String>,
+            binds: &mut Vec<SqlValue>,
+            seen: &mut HashSet<String>,
+            values: &mut std::collections::HashMap<String, SqlValue>,
+            k: &str,
+            v: SqlValue,
+        ) {
+            if seen.insert(k.to_string()) {
+                cols.push(quote_ident(k));
+                values.insert(k.to_string(), v.clone());
+                binds.push(v);
+            }
         }
-    };
 
-    put(&mut cols, &mut binds, &mut seen, "name", SqlValue::Text(name.clone()));
-    for (k, v) in data {
-        if k == "doctype" || k == "name" {
-            continue;
-        }
-        // child tables handled separately
-        if let Some(f) = meta.field(k) {
-            if f.is_child_table() {
+        put(&mut cols, &mut binds, &mut seen, &mut values, "name", SqlValue::Text(name.clone()));
+
+        // Payload columns (client cannot set system fields — Frappe overrides them).
+        for (k, v) in data {
+            if k == "doctype" || k == "name" || SYSTEM_INSERT_FIELDS.contains(&k.as_str()) {
                 continue;
             }
-        }
-        if meta.has_column(k) {
-            put(&mut cols, &mut binds, &mut seen, k, json_to_sql(v));
-        }
-    }
-    // System fields (don't override explicit values already present).
-    if meta.has_column("owner") {
-        put(&mut cols, &mut binds, &mut seen, "owner", SqlValue::Text(user.to_string()));
-    }
-    if meta.has_column("modified_by") {
-        put(&mut cols, &mut binds, &mut seen, "modified_by", SqlValue::Text(user.to_string()));
-    }
-    if meta.has_column("creation") {
-        put(&mut cols, &mut binds, &mut seen, "creation", SqlValue::Text(now.clone()));
-    }
-    if meta.has_column("modified") {
-        put(&mut cols, &mut binds, &mut seen, "modified", SqlValue::Text(now.clone()));
-    }
-    if meta.has_column("docstatus") {
-        put(&mut cols, &mut binds, &mut seen, "docstatus", SqlValue::Integer(0));
-    }
-    if meta.has_column("idx") {
-        put(&mut cols, &mut binds, &mut seen, "idx", SqlValue::Integer(0));
-    }
-
-    let placeholders = vec!["?"; cols.len()].join(", ");
-    let sql = format!(
-        "INSERT INTO {} ({}) VALUES ({})",
-        quote_ident(&meta.table),
-        cols.join(", "),
-        placeholders
-    );
-    con.execute(&sql, rusqlite::params_from_iter(binds.iter()))
-        .map_err(|e| match e {
-            rusqlite::Error::SqliteFailure(ref err, _)
-                if err.code == rusqlite::ErrorCode::ConstraintViolation =>
-            {
-                OrmError::Validation(format!("{} {} already exists", meta.name, name))
+            if let Some(f) = meta.field(k) {
+                if f.is_child_table() {
+                    continue;
+                }
             }
-            other => OrmError::Db(other),
-        })?;
+            if meta.has_column(k) {
+                put(&mut cols, &mut binds, &mut seen, &mut values, k, json_to_sql(v));
+            }
+        }
 
-    // Child rows.
-    insert_children(con, meta, &name, data, user, &now)?;
+        // Docfield defaults for any column not provided.
+        for f in &meta.fields {
+            if f.is_virtual_column() || seen.contains(&f.fieldname) || !meta.has_column(&f.fieldname) {
+                continue;
+            }
+            if let Some(dv) = default_for(f, user) {
+                put(&mut cols, &mut binds, &mut seen, &mut values, &f.fieldname, dv);
+            }
+        }
 
-    get_doc(con, meta, &name)
+        // System fields (server-authoritative).
+        if meta.has_column("owner") {
+            put(&mut cols, &mut binds, &mut seen, &mut values, "owner", SqlValue::Text(user.to_string()));
+        }
+        if meta.has_column("modified_by") {
+            put(&mut cols, &mut binds, &mut seen, &mut values, "modified_by", SqlValue::Text(user.to_string()));
+        }
+        if meta.has_column("creation") {
+            put(&mut cols, &mut binds, &mut seen, &mut values, "creation", SqlValue::Text(now.clone()));
+        }
+        if meta.has_column("modified") {
+            put(&mut cols, &mut binds, &mut seen, &mut values, "modified", SqlValue::Text(now.clone()));
+        }
+        if meta.has_column("docstatus") {
+            put(&mut cols, &mut binds, &mut seen, &mut values, "docstatus", SqlValue::Integer(0));
+        }
+        if meta.has_column("idx") {
+            put(&mut cols, &mut binds, &mut seen, &mut values, "idx", SqlValue::Integer(0));
+        }
+
+        // Required-field validation (after defaults).
+        for f in &meta.fields {
+            if !f.reqd || f.is_child_table() || f.is_virtual_column() || !meta.has_column(&f.fieldname) {
+                continue;
+            }
+            let present = values.get(&f.fieldname).map(is_nonempty).unwrap_or(false);
+            if !present {
+                return Err(OrmError::Validation(format!(
+                    "Value missing for {}: {}",
+                    meta.name, f.fieldname
+                )));
+            }
+        }
+
+        let placeholders = vec!["?"; cols.len()].join(", ");
+        let sql = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            quote_ident(&meta.table),
+            cols.join(", "),
+            placeholders
+        );
+        con.execute(&sql, rusqlite::params_from_iter(binds.iter()))
+            .map_err(|e| match e {
+                rusqlite::Error::SqliteFailure(ref err, _)
+                    if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    OrmError::Duplicate(format!("{} {} already exists", meta.name, name))
+                }
+                other => OrmError::Db(other),
+            })?;
+
+        insert_children(con, meta, &name, data, user, &now)?;
+        Ok(name)
+    })?;
+
+    get_doc(con, meta, acl, &name)
 }
 
 fn insert_children(
@@ -497,8 +692,7 @@ fn insert_children(
             None => continue,
         };
         let child_table = format!("tab{child_dt}");
-        // physical columns of the child table
-        let mut child_cols = std::collections::HashSet::new();
+        let mut child_cols = HashSet::new();
         if let Ok(mut s) = con.prepare(&format!("PRAGMA table_info({})", quote_ident(&child_table))) {
             if let Ok(rs) = s.query_map([], |r| r.get::<_, String>(1)) {
                 for c in rs.flatten() {
@@ -517,9 +711,8 @@ fn insert_children(
             let cname = util::random_name();
             let mut cols = vec![quote_ident("name")];
             let mut binds = vec![SqlValue::Text(cname)];
-            let mut seen: std::collections::HashSet<String> =
-                ["name".to_string()].into_iter().collect();
-            let put = |cols: &mut Vec<String>, binds: &mut Vec<SqlValue>, seen: &mut std::collections::HashSet<String>, k: &str, v: SqlValue| {
+            let mut seen: HashSet<String> = ["name".to_string()].into_iter().collect();
+            let put = |cols: &mut Vec<String>, binds: &mut Vec<SqlValue>, seen: &mut HashSet<String>, k: &str, v: SqlValue| {
                 if child_cols.contains(k) && seen.insert(k.to_string()) {
                     cols.push(quote_ident(k));
                     binds.push(v);
@@ -553,150 +746,119 @@ fn insert_children(
     Ok(())
 }
 
-fn resolve_name(
-    con: &Connection,
-    meta: &Meta,
-    data: &Map<String, Value>,
-) -> Result<String, OrmError> {
-    if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
-        if !n.is_empty() {
-            return Ok(n.to_string());
-        }
-    }
-    if let Some(autoname) = &meta.autoname {
-        let a = autoname.trim();
-        if let Some(field) = a.strip_prefix("field:") {
-            if let Some(v) = data.get(field).and_then(|v| v.as_str()) {
-                if !v.is_empty() {
-                    return Ok(v.to_string());
-                }
-            }
-            return Err(OrmError::Validation(format!(
-                "autoname field '{field}' is required for {}",
-                meta.name
-            )));
-        }
-        if a.eq_ignore_ascii_case("hash") || a.eq_ignore_ascii_case("autoname") {
-            return Ok(util::random_name());
-        }
-        if let Some(prefix) = a.strip_prefix("prompt") {
-            let _ = prefix; // prompt naming requires a name from the client
-            return Err(OrmError::Validation(format!(
-                "{} requires an explicit name",
-                meta.name
-            )));
-        }
-        // naming_series / format: not implemented -> fall through to hash
-        let _ = con;
-    }
-    Ok(util::random_name())
-}
-
 fn insert_single(
     con: &Connection,
     meta: &Meta,
+    acl: &ReadAcl,
     data: &Map<String, Value>,
     user: &str,
 ) -> Result<Value, OrmError> {
-    update_single(con, meta, data, user)?;
-    get_single(con, meta)
+    with_txn(con, || update_single(con, meta, data, user))?;
+    get_single(con, meta, acl)
 }
+
+/// Fields a client may never write through update.
+const PROTECTED_UPDATE_FIELDS: &[&str] = &[
+    "doctype", "name", "creation", "owner", "docstatus", "idx", "parent", "parenttype", "parentfield",
+];
 
 /// UPDATE an existing document. Returns the updated doc.
 pub fn update(
     con: &Connection,
     meta: &Meta,
+    acl: &ReadAcl,
     name: &str,
     data: &Map<String, Value>,
     user: &str,
 ) -> Result<Value, OrmError> {
     if meta.issingle {
-        update_single(con, meta, data, user)?;
-        return get_single(con, meta);
+        with_txn(con, || update_single(con, meta, data, user))?;
+        return get_single(con, meta, acl);
     }
-    // Existence check.
-    let exists: i64 = con.query_row(
-        &format!(
-            "SELECT COUNT(*) FROM {} WHERE {}=?1",
-            quote_ident(&meta.table),
-            quote_ident("name")
-        ),
-        [name],
-        |r| r.get(0),
-    )?;
-    if exists == 0 {
+    if meta.is_virtual {
         return Err(OrmError::NotFound(format!("{} {}", meta.name, name)));
     }
 
-    let now = util::now_datetime();
-    let mut sets = Vec::new();
-    let mut binds: Vec<SqlValue> = Vec::new();
-    let mut child_fields_in_payload = Vec::new();
-    for (k, v) in data {
-        if k == "doctype" || k == "name" || k == "creation" || k == "owner" {
-            continue;
+    with_txn(con, || {
+        let exists: i64 = con.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM {} WHERE {}=?1",
+                quote_ident(&meta.table),
+                quote_ident("name")
+            ),
+            [name],
+            |r| r.get(0),
+        )?;
+        if exists == 0 {
+            return Err(OrmError::NotFound(format!("{} {}", meta.name, name)));
         }
-        if let Some(f) = meta.field(k) {
-            if f.is_child_table() {
-                child_fields_in_payload.push((k.clone(), v.clone()));
+
+        let now = util::now_datetime();
+        let mut sets = Vec::new();
+        let mut binds: Vec<SqlValue> = Vec::new();
+        let mut child_fields_in_payload = Vec::new();
+        for (k, v) in data {
+            if PROTECTED_UPDATE_FIELDS.contains(&k.as_str()) {
                 continue;
             }
-        }
-        if meta.has_column(k) {
-            sets.push(format!("{}=?", quote_ident(k)));
-            binds.push(json_to_sql(v));
-        }
-    }
-    if meta.has_column("modified") {
-        sets.push(format!("{}=?", quote_ident("modified")));
-        binds.push(SqlValue::Text(now.clone()));
-    }
-    if meta.has_column("modified_by") {
-        sets.push(format!("{}=?", quote_ident("modified_by")));
-        binds.push(SqlValue::Text(user.to_string()));
-    }
-    if !sets.is_empty() {
-        binds.push(SqlValue::Text(name.to_string()));
-        let sql = format!(
-            "UPDATE {} SET {} WHERE {}=?",
-            quote_ident(&meta.table),
-            sets.join(", "),
-            quote_ident("name")
-        );
-        con.execute(&sql, rusqlite::params_from_iter(binds.iter()))?;
-    }
-
-    // Replace child rows that were supplied.
-    for (fieldname, value) in child_fields_in_payload {
-        if let Some(cf) = meta.field(&fieldname) {
-            if let Some(child_dt) = &cf.options {
-                let child_table = format!("tab{child_dt}");
-                let _ = con.execute(
-                    &format!(
-                        "DELETE FROM {} WHERE {}=?1 AND {}=?2 AND {}=?3",
-                        quote_ident(&child_table),
-                        quote_ident("parent"),
-                        quote_ident("parenttype"),
-                        quote_ident("parentfield")
-                    ),
-                    rusqlite::params![name, meta.name, fieldname],
-                );
+            if let Some(f) = meta.field(k) {
+                if f.is_child_table() {
+                    child_fields_in_payload.push((k.clone(), v.clone()));
+                    continue;
+                }
+            }
+            if meta.has_column(k) {
+                sets.push(format!("{}=?", quote_ident(k)));
+                binds.push(json_to_sql(v));
             }
         }
-        let mut one = Map::new();
-        one.insert(fieldname.clone(), value);
-        insert_children(con, meta, name, &one, user, &now)?;
-    }
+        if meta.has_column("modified") {
+            sets.push(format!("{}=?", quote_ident("modified")));
+            binds.push(SqlValue::Text(now.clone()));
+        }
+        if meta.has_column("modified_by") {
+            sets.push(format!("{}=?", quote_ident("modified_by")));
+            binds.push(SqlValue::Text(user.to_string()));
+        }
+        if !sets.is_empty() {
+            binds.push(SqlValue::Text(name.to_string()));
+            let sql = format!(
+                "UPDATE {} SET {} WHERE {}=?",
+                quote_ident(&meta.table),
+                sets.join(", "),
+                quote_ident("name")
+            );
+            con.execute(&sql, rusqlite::params_from_iter(binds.iter()))?;
+        }
 
-    get_doc(con, meta, name)
+        // Replace child rows that were supplied (full-array replace, matching the REST contract).
+        for (fieldname, value) in child_fields_in_payload {
+            if let Some(cf) = meta.field(&fieldname) {
+                if let Some(child_dt) = &cf.options {
+                    let child_table = format!("tab{child_dt}");
+                    let _ = con.execute(
+                        &format!(
+                            "DELETE FROM {} WHERE {}=?1 AND {}=?2 AND {}=?3",
+                            quote_ident(&child_table),
+                            quote_ident("parent"),
+                            quote_ident("parenttype"),
+                            quote_ident("parentfield")
+                        ),
+                        rusqlite::params![name, meta.name, fieldname],
+                    );
+                }
+            }
+            let mut one = Map::new();
+            one.insert(fieldname.clone(), value);
+            insert_children(con, meta, name, &one, user, &now)?;
+        }
+        Ok(())
+    })?;
+
+    get_doc(con, meta, acl, name)
 }
 
-fn update_single(
-    con: &Connection,
-    meta: &Meta,
-    data: &Map<String, Value>,
-    user: &str,
-) -> Result<(), OrmError> {
+fn update_single(con: &Connection, meta: &Meta, data: &Map<String, Value>, user: &str) -> Result<(), OrmError> {
     let now = util::now_datetime();
     let set_field = |field: &str, value: &str| -> Result<(), OrmError> {
         con.execute(
@@ -729,55 +891,89 @@ fn update_single(
 /// DELETE a document (and its child rows). Returns Ok(()).
 pub fn delete(con: &Connection, meta: &Meta, name: &str) -> Result<(), OrmError> {
     if meta.issingle {
-        con.execute(
-            "DELETE FROM \"tabSingles\" WHERE doctype=?1",
-            [&meta.name],
-        )?;
+        con.execute("DELETE FROM \"tabSingles\" WHERE doctype=?1", [&meta.name])?;
         return Ok(());
     }
-    let exists: i64 = con.query_row(
-        &format!(
-            "SELECT COUNT(*) FROM {} WHERE {}=?1",
-            quote_ident(&meta.table),
-            quote_ident("name")
-        ),
-        [name],
-        |r| r.get(0),
-    )?;
-    if exists == 0 {
+    if meta.is_virtual {
         return Err(OrmError::NotFound(format!("{} {}", meta.name, name)));
     }
-    // child rows
-    for cf in meta.child_tables() {
-        if let Some(child_dt) = &cf.options {
-            let child_table = format!("tab{child_dt}");
-            let _ = con.execute(
+
+    with_txn(con, || {
+        // Existence + submitted-state check.
+        let docstatus: Option<i64> = con
+            .query_row(
                 &format!(
-                    "DELETE FROM {} WHERE {}=?1 AND {}=?2",
-                    quote_ident(&child_table),
-                    quote_ident("parent"),
-                    quote_ident("parenttype")
+                    "SELECT {} FROM {} WHERE {}=?1",
+                    if meta.has_column("docstatus") { quote_ident("docstatus") } else { "0".to_string() },
+                    quote_ident(&meta.table),
+                    quote_ident("name")
                 ),
-                rusqlite::params![name, meta.name],
-            );
+                [name],
+                |r| r.get::<_, Option<i64>>(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => OrmError::NotFound(format!("{} {}", meta.name, name)),
+                other => OrmError::Db(other),
+            })?;
+        if docstatus == Some(1) {
+            return Err(OrmError::Validation(format!(
+                "Submitted Document {} {} cannot be deleted",
+                meta.name, name
+            )));
         }
+
+        for cf in meta.child_tables() {
+            if let Some(child_dt) = &cf.options {
+                let child_table = format!("tab{child_dt}");
+                let _ = con.execute(
+                    &format!(
+                        "DELETE FROM {} WHERE {}=?1 AND {}=?2",
+                        quote_ident(&child_table),
+                        quote_ident("parent"),
+                        quote_ident("parenttype")
+                    ),
+                    rusqlite::params![name, meta.name],
+                );
+            }
+        }
+        con.execute(
+            &format!(
+                "DELETE FROM {} WHERE {}=?1",
+                quote_ident(&meta.table),
+                quote_ident("name")
+            ),
+            [name],
+        )?;
+        Ok(())
+    })
+}
+
+/// Read the `owner` of a document (for if_owner permission scoping). None if not found.
+pub fn doc_owner(con: &Connection, meta: &Meta, name: &str) -> Option<String> {
+    if !meta.has_column("owner") {
+        return None;
     }
-    con.execute(
+    con.query_row(
         &format!(
-            "DELETE FROM {} WHERE {}=?1",
+            "SELECT {} FROM {} WHERE {}=?1",
+            quote_ident("owner"),
             quote_ident(&meta.table),
             quote_ident("name")
         ),
         [name],
-    )?;
-    Ok(())
+        |r| r.get::<_, Option<String>>(0),
+    )
+    .ok()
+    .flatten()
 }
 
 /// COUNT for list metadata.
+#[allow(dead_code)]
 pub fn count(con: &Connection, meta: &Meta, filters: &Value) -> Result<i64, OrmError> {
+    let acl = ReadAcl::all();
     let mut where_parts = Vec::new();
     let mut binds: Vec<SqlValue> = Vec::new();
-    for c in parse_filters(meta, filters)? {
+    for c in parse_filters(meta, &acl, filters)? {
         where_parts.push(c.sql);
         binds.extend(c.binds);
     }
@@ -786,11 +982,7 @@ pub fn count(con: &Connection, meta: &Meta, filters: &Value) -> Result<i64, OrmE
     } else {
         format!(" WHERE {}", where_parts.join(" AND "))
     };
-    let sql = format!(
-        "SELECT COUNT(*) FROM {}{}",
-        quote_ident(&meta.table),
-        where_clause
-    );
+    let sql = format!("SELECT COUNT(*) FROM {}{}", quote_ident(&meta.table), where_clause);
     let n: i64 = con.query_row(&sql, rusqlite::params_from_iter(binds.iter()), |r| r.get(0))?;
     Ok(n)
 }

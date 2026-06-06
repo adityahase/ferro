@@ -21,6 +21,7 @@ pub struct DocField {
     pub options: Option<String>,
     pub reqd: bool,
     pub default: Option<String>,
+    pub permlevel: i64,
 }
 
 impl DocField {
@@ -44,7 +45,9 @@ pub struct Meta {
     pub istable: bool,
     pub is_virtual: bool,
     pub autoname: Option<String>,
+    #[allow(dead_code)]
     pub naming_rule: Option<String>,
+    #[allow(dead_code)]
     pub title_field: Option<String>,
     pub sort_field: String,
     pub sort_order: String,
@@ -127,7 +130,7 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
     {
         let mut stmt = con.prepare(
             "SELECT fieldname, COALESCE(fieldtype,'Data'), options, \
-             COALESCE(reqd,0), \"default\" \
+             COALESCE(reqd,0), \"default\", COALESCE(permlevel,0) \
              FROM \"tabDocField\" WHERE parent = ?1 ORDER BY idx",
         )?;
         let rows = stmt.query_map([doctype], |r| {
@@ -137,6 +140,7 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
                 options: r.get::<_, Option<String>>(2)?,
                 reqd: r.get::<_, Option<i64>>(3)?.unwrap_or(0) != 0,
                 default: r.get::<_, Option<String>>(4)?,
+                permlevel: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
             })
         })?;
         for f in rows {
@@ -181,46 +185,69 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
     })
 }
 
-/// Thread-safe, bounded metadata cache. Entries are `Arc<Meta>` so callers clone the
-/// handle out and drop the lock immediately.
+/// Thread-safe, bounded LRU metadata cache. Entries are `Arc<Meta>` so callers clone the
+/// handle out and drop the lock immediately. A single mutex guards both the map and the
+/// recency order so they can never disagree; bounded size keeps resident meta flat under churn.
+struct Inner {
+    map: HashMap<String, Arc<Meta>>,
+    order: VecDeque<String>, // front = least-recently-used, back = most-recently-used
+}
+
 pub struct MetaCache {
-    map: Mutex<HashMap<String, Arc<Meta>>>,
-    order: Mutex<VecDeque<String>>,
+    inner: Mutex<Inner>,
     cap: usize,
 }
 
 impl MetaCache {
     pub fn new(cap: usize) -> Self {
         MetaCache {
-            map: Mutex::new(HashMap::new()),
-            order: Mutex::new(VecDeque::new()),
-            cap,
+            inner: Mutex::new(Inner {
+                map: HashMap::new(),
+                order: VecDeque::new(),
+            }),
+            cap: cap.max(1),
         }
     }
 
     pub fn get(&self, con: &Connection, doctype: &str) -> Result<Arc<Meta>, MetaError> {
-        if let Some(m) = self.map.lock().unwrap().get(doctype) {
-            return Ok(m.clone());
-        }
-        let meta = Arc::new(load_meta(con, doctype)?);
-        let mut map = self.map.lock().unwrap();
-        let mut order = self.order.lock().unwrap();
-        if !map.contains_key(doctype) {
-            // bounded eviction (FIFO) keeps resident meta flat under churn
-            while order.len() >= self.cap {
-                if let Some(old) = order.pop_front() {
-                    map.remove(&old);
-                } else {
-                    break;
-                }
+        // Fast path: hit — clone the Arc and bump recency.
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(m) = inner.map.get(doctype).cloned() {
+                touch(&mut inner.order, doctype);
+                return Ok(m);
             }
-            map.insert(doctype.to_string(), meta.clone());
-            order.push_back(doctype.to_string());
         }
+        // Slow path: load OUTSIDE the lock (DB I/O), then insert.
+        let meta = Arc::new(load_meta(con, doctype)?);
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(existing) = inner.map.get(doctype).cloned() {
+            // another thread loaded it meanwhile
+            touch(&mut inner.order, doctype);
+            return Ok(existing);
+        }
+        while inner.order.len() >= self.cap {
+            if let Some(old) = inner.order.pop_front() {
+                inner.map.remove(&old);
+            } else {
+                break;
+            }
+        }
+        inner.map.insert(doctype.to_string(), meta.clone());
+        inner.order.push_back(doctype.to_string());
         Ok(meta)
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
-        self.map.lock().unwrap().len()
+        self.inner.lock().unwrap().map.len()
     }
+}
+
+/// Move `key` to the most-recently-used position.
+fn touch(order: &mut VecDeque<String>, key: &str) {
+    if let Some(pos) = order.iter().position(|k| k == key) {
+        order.remove(pos);
+    }
+    order.push_back(key.to_string());
 }
