@@ -1,0 +1,21 @@
+[package]
+name = "ferro"
+version = "0.1.0"
+edition = "2021"
+description = "A Rust runtime that serves the Frappe REST API against an existing Frappe SQLite site — replacing the CPython+Frappe worker."
+
+[[bin]]
+name = "ferro"
+path = "src/main.rs"
+
+[dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }
+tiny_http = "0.12"
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
