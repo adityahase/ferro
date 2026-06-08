@@ -1,0 +1,23 @@
+[Unit]
+Description=Ferro control plane (signup + provisioning + tenant gateway)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=FERRO_HOME=/opt/ferro/stack
+Environment=FERRO_BASE_DOMAIN=ferro.x.frappe.dev
+Environment=FERRO_CONTROL_HOST=127.0.0.1
+Environment=FERRO_CONTROL_PORT=8080
+Environment=FERRO_DEFAULT_RUNTIME=ferro
+ExecStart=/usr/bin/python3 /opt/ferro/control/server.py
+WorkingDirectory=/opt/ferro/control
+Restart=always
+RestartSec=2
+# the control plane provisions tenants, so it needs to drive systemctl
+# (runs as root on this single-purpose box)
+StandardOutput=append:/opt/ferro/logs/control.log
+StandardError=append:/opt/ferro/logs/control.log
+
+[Install]
+WantedBy=multi-user.target

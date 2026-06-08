@@ -1,0 +1,20 @@
+[Unit]
+Description=Ferro tenant bench: %i
+After=network.target
+PartOf=ferro-instances.target
+
+[Service]
+Type=simple
+ExecStart=/opt/ferro/bin/run-instance.sh %i
+Restart=on-failure
+RestartSec=2
+# memory hygiene — a pure-ferro bench peaks well under this; ferrod fits too
+MemoryHigh=220M
+MemoryMax=320M
+# keep the box tidy
+LimitNOFILE=4096
+StandardOutput=append:/opt/ferro/logs/instance-%i.log
+StandardError=append:/opt/ferro/logs/instance-%i.log
+
+[Install]
+WantedBy=multi-user.target

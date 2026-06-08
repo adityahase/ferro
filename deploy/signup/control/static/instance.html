@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Starting your Frappe Desk…</title>
+<link rel="preconnect" href="https://rsms.me/">
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+<style>
+  :root{
+    --gray-50:#f8f8f8; --gray-100:#f3f3f3; --gray-200:#ededed; --gray-300:#e2e2e2;
+    --gray-400:#c7c7c7; --gray-500:#999999; --gray-600:#7c7c7c; --gray-700:#525252;
+    --gray-800:#383838; --gray-900:#171717;
+    --blue-600:#007be0; --green-100:#e4faeb; --green-600:#30a66d;
+    --red-500:#e03636; --red-600:#cc2929; --orange-500:#e86c13; --orange-600:#d45a08;
+    --bg:var(--gray-50); --surface:#ffffff; --line:var(--gray-200);
+    --ink-9:var(--gray-900); --ink-8:var(--gray-800); --ink-6:var(--gray-700);
+    --ink-5:var(--gray-600); --ink-4:var(--gray-500);
+    --brand:var(--orange-500); --brand-2:var(--orange-600); --ok:var(--green-600);
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    /* legacy aliases */
+    --panel:var(--surface); --ink:var(--ink-8); --mut:var(--ink-5); --dim:var(--ink-4);
+    --rust:var(--brand); --rust2:var(--brand-2);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink-8);
+    font:14px/1.5 "InterVariable","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    letter-spacing:.01em;font-feature-settings:"cv11" 1;font-optical-sizing:auto;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+  .wrap{max-width:520px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:40px 20px;text-align:center}
+  .spark{width:48px;height:48px;border-radius:13px;background:var(--brand);
+    display:grid;place-items:center;box-shadow:0 8px 24px rgba(232,108,19,.32)}
+  .spark svg{width:27px;height:27px}
+  h1{font-size:22px;font-weight:600;margin:20px 0 4px;letter-spacing:-.3px;color:var(--ink-9)}
+  .host{font-family:var(--mono);color:var(--brand-2);font-size:14px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;
+    margin-top:26px;width:100%;text-align:left;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+  .steps{list-style:none;margin:0;padding:0}
+  .steps li{display:flex;align-items:center;gap:11px;padding:8px 0;font-size:13.5px;
+    border-bottom:1px solid var(--line)}
+  .steps li:last-child{border-bottom:0}
+  .dot{width:15px;height:15px;border-radius:50%;border:2px solid var(--gray-300);flex:none;position:relative}
+  .dot.run{border-color:var(--brand);animation:spin 1s linear infinite;border-top-color:transparent}
+  .dot.ok{border-color:var(--green-600);background:var(--green-600)}
+  .dot.ok::after{content:"";position:absolute;left:4px;top:1px;width:3.5px;height:7px;border:solid #fff;
+    border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .dot.err{border-color:var(--red-500);background:var(--red-500)}
+  .nm{font-weight:500;text-transform:capitalize;color:var(--ink-8)}.det{color:var(--ink-5);font-size:12px;margin-left:auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .foot{color:var(--ink-4);font-size:12px;margin-top:22px}
+  .err{color:var(--red-600);font-size:13px;margin-top:14px}
+  a{color:var(--blue-600);text-decoration:none}
+  a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="spark"><svg viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" fill="#fff"/></svg></div>
+  <h1>Bringing up your Frappe Desk</h1>
+  <div class="host" id="host"></div>
+  <div class="card"><ul class="steps" id="steps"><li><div class="dot run"></div><span class="nm">starting…</span></li></ul></div>
+  <div class="err" id="err"></div>
+  <div class="foot">This page refreshes itself — you'll drop straight into Desk when it's ready.</div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function dot(st){return st==='ok'?'<div class="dot ok"></div>':st==='error'?'<div class="dot err"></div>':'<div class="dot run"></div>';}
+async function tick(){
+  let info;
+  try{ info=await fetch('/_ferro/info',{cache:'no-store'}).then(r=>r.json()); }
+  catch(e){ return setTimeout(tick,1500); }
+  $('#host').textContent=info.host||location.host;
+  // ready -> go to Desk
+  if(info.status && info.status!=='provisioning'){ location.href='/app'; return; }
+  const steps=(info.job&&info.job.steps)||[];
+  if(steps.length){
+    $('#steps').innerHTML=steps.map(s=>`<li>${dot(s.status)}<span class="nm">${esc((s.name||'').replace(':',' · '))}</span><span class="det">${esc(s.detail||'')}</span></li>`).join('');
+  }
+  const err=info.job&&info.job.error;
+  if(err){ $('#err').innerHTML='✗ '+esc(err)+'<br><a href="https://'+esc(info.base_domain||location.host.split('.').slice(1).join('.'))+'/">start over →</a>'; return; }
+  setTimeout(tick,1200);
+}
+tick();
+</script>
+</body>
+</html>

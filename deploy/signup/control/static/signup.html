@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Ferro — spin up a Frappe Desk in seconds</title>
+<link rel="preconnect" href="https://rsms.me/">
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+<style>
+  :root{
+    /* frappe-ui gray scale */
+    --gray-50:#f8f8f8; --gray-100:#f3f3f3; --gray-200:#ededed; --gray-300:#e2e2e2;
+    --gray-400:#c7c7c7; --gray-500:#999999; --gray-600:#7c7c7c; --gray-700:#525252;
+    --gray-800:#383838; --gray-900:#171717;
+    --blue-500:#0289f7; --blue-600:#007be0;
+    --green-100:#e4faeb; --green-600:#30a66d; --green-700:#278f5e;
+    --red-50:#fff7f7; --red-100:#ffe7e7; --red-200:#ffd8d8; --red-500:#e03636;
+    --red-600:#cc2929; --red-700:#b52a2a;
+    --orange-50:#fff8f3; --orange-100:#ffefe4; --orange-500:#e86c13; --orange-600:#d45a08;
+    --amber-500:#e79913;
+    /* semantic tokens (frappe-ui light) */
+    --bg:var(--gray-50); --surface:#ffffff; --surface-2:var(--gray-100);
+    --line:var(--gray-200); --line-2:var(--gray-300);
+    --ink-9:var(--gray-900); --ink-8:var(--gray-800); --ink-7:var(--gray-700);
+    --ink-6:var(--gray-700); --ink-5:var(--gray-600); --ink-4:var(--gray-500);
+    --brand:var(--orange-500); --brand-2:var(--orange-600);
+    --ok:var(--green-600); --err:var(--red-600);
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --radius-sm:4px; --radius:8px; --radius-md:10px; --radius-lg:12px;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.1);
+    --shadow:0 0 1px rgba(0,0,0,.2),0 1px 3px rgba(0,0,0,.05),0 10px 24px -3px rgba(0,0,0,.1);
+    /* legacy aliases so any inline var() references resolve to frappe-ui tones */
+    --panel:var(--surface); --panel2:var(--surface-2);
+    --ink:var(--ink-8); --mut:var(--ink-5); --dim:var(--ink-4); --iron:var(--ink-7);
+    --rust:var(--brand); --rust2:var(--brand-2); --warn:var(--amber-500); --rad:var(--radius-lg);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink-8);
+    font:14px/1.5 "InterVariable","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    letter-spacing:.01em;font-feature-settings:"cv11" 1;font-optical-sizing:auto;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+  a{color:var(--blue-600);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:920px;margin:0 auto;padding:0 20px}
+  header.hero{padding:56px 0 22px;text-align:center}
+  .logo{display:inline-flex;align-items:center;gap:11px;font-weight:600;font-size:24px;
+    letter-spacing:-.3px;color:var(--ink-9)}
+  .spark{width:32px;height:32px;border-radius:var(--radius-md);
+    background:var(--brand);display:inline-grid;place-items:center;
+    box-shadow:0 4px 12px rgba(232,108,19,.28)}
+  .spark svg{width:19px;height:19px}
+  h1{font-size:30px;font-weight:600;margin:20px 0 8px;letter-spacing:-.5px;color:var(--ink-9)}
+  .sub{color:var(--ink-6);font-size:16px;line-height:1.55;max-width:600px;margin:0 auto}
+  .pill{display:inline-flex;align-items:center;margin-top:16px;padding:4px 12px;
+    border-radius:9999px;color:var(--ink-6);font-size:12px;font-weight:500;
+    background:var(--surface-2)}
+  .pill b{color:var(--ink-9)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
+    padding:24px;margin:16px 0;box-shadow:var(--shadow-sm)}
+  .lbl{font-weight:500;font-size:14px;margin-bottom:11px;display:flex;justify-content:space-between;
+    align-items:baseline;color:var(--ink-9)}
+  .lbl small{color:var(--ink-4);font-weight:400;font-size:12px}
+  .domain{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;background:var(--surface);transition:border-color .12s,box-shadow .12s}
+  .domain:focus-within{border-color:var(--gray-500);box-shadow:0 0 0 2px var(--gray-300)}
+  .domain.good{border-color:var(--green-600);box-shadow:0 0 0 2px var(--green-100)}
+  .domain.bad{border-color:var(--red-500);box-shadow:0 0 0 2px var(--red-100)}
+  .domain input{flex:1;min-width:0;background:transparent;border:0;color:var(--ink-9);
+    font-size:16px;padding:12px 14px;outline:none;font-family:var(--mono);letter-spacing:0}
+  .domain input::placeholder{color:var(--ink-4)}
+  .domain .suffix{display:flex;align-items:center;padding:0 14px;color:var(--ink-5);
+    background:var(--gray-50);border-left:1px solid var(--line);font-family:var(--mono);font-size:14px}
+  .hint{margin-top:8px;font-size:13px;min-height:18px;color:var(--ink-5)}
+  .hint.good{color:var(--green-700)} .hint.bad{color:var(--red-600)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:4px}
+  .app{position:relative;border:1px solid var(--line);border-radius:var(--radius-md);padding:14px 14px 13px;
+    cursor:pointer;background:var(--surface);transition:.12s;user-select:none}
+  .app:hover{border-color:var(--line-2);background:var(--gray-50)}
+  .app.on{border-color:var(--brand);background:var(--orange-50)}
+  .app .nm{font-weight:600;font-size:14px;text-transform:capitalize;display:flex;align-items:center;
+    gap:8px;color:var(--ink-9)}
+  .app .ds{color:var(--ink-5);font-size:13px;margin-top:5px;line-height:1.5}
+  .app .meta{margin-top:10px;font-size:11px;color:var(--ink-4);font-family:var(--mono);letter-spacing:0}
+  .app .tick{position:absolute;top:12px;right:12px;width:18px;height:18px;border-radius:50%;
+    border:1.5px solid var(--line-2);display:grid;place-items:center;transition:.12s}
+  .app.on .tick{background:var(--brand);border-color:var(--brand)}
+  .app.on .tick svg{display:block} .app .tick svg{display:none;width:11px;height:11px}
+  .app.off{opacity:.5;cursor:not-allowed;background:var(--gray-50)}
+  .row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .btn{appearance:none;border:0;border-radius:var(--radius-md);padding:0 16px;height:40px;
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    font-size:16px;font-weight:500;line-height:1;cursor:pointer;
+    background:var(--gray-900);color:#fff;transition:background-color .12s,border-color .12s}
+  .btn:hover{background:var(--gray-800);text-decoration:none}
+  .btn:active{background:var(--gray-700)}
+  .btn:disabled{background:var(--surface-2);color:var(--ink-4);cursor:not-allowed}
+  .btn.ghost{background:var(--surface);border:1px solid var(--line-2);color:var(--ink-8)}
+  .btn.ghost:hover{background:var(--surface);border-color:var(--gray-400)}
+  .btn.ghost:active{background:var(--gray-300)}
+  .foot{color:var(--ink-4);font-size:12.5px;text-align:center;padding:28px 0 50px;line-height:1.7}
+  .foot code{color:var(--ink-6);font-family:var(--mono);font-size:12px}
+  /* progress */
+  .steps{list-style:none;margin:6px 0 0;padding:0}
+  .steps li{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .steps li:last-child{border-bottom:0}
+  .dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--gray-300);flex:none;position:relative}
+  .dot.run{border-color:var(--brand);animation:spin 1s linear infinite;border-top-color:transparent}
+  .dot.ok{border-color:var(--green-600);background:var(--green-600)}
+  .dot.ok::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;
+    border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .dot.err{border-color:var(--red-500);background:var(--red-500)}
+  .stepname{font-weight:500;text-transform:capitalize;color:var(--ink-8)}
+  .stepdet{color:var(--ink-5);font-size:12.5px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ok-card{text-align:center}
+  .ok-badge{width:52px;height:52px;border-radius:50%;background:var(--green-600);
+    display:inline-grid;place-items:center;margin:0 auto 2px;box-shadow:0 4px 12px rgba(48,166,109,.28)}
+  .ok-badge svg{width:28px;height:28px}
+  .ok-url{font-family:var(--mono);font-size:18px;color:var(--brand-2);margin:8px 0 4px;word-break:break-all}
+  .mono{font-family:var(--mono)}
+  .codeblock{background:var(--gray-900);border:1px solid var(--gray-900);border-radius:var(--radius);
+    padding:13px 15px;font-family:var(--mono);font-size:12.5px;color:var(--gray-200);
+    overflow-x:auto;text-align:left;white-space:pre}
+  .err-banner{background:var(--red-50);border:1px solid var(--red-200);border-radius:var(--radius);
+    padding:12px 14px;color:var(--red-700);font-size:13.5px;margin-top:10px}
+  .hide{display:none}
+  .specs{display:flex;gap:22px;justify-content:center;flex-wrap:wrap;margin-top:18px;color:var(--ink-5);font-size:13px}
+  .specs b{color:var(--ink-9);font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div class="logo">
+      <span class="spark"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" fill="#fff"/></svg></span>
+      Ferro
+    </div>
+    <h1>Spin up a Frappe Desk in seconds</h1>
+    <p class="sub">Your own Frappe site — the real <b>Desk</b> admin UI, workspaces, lists and
+      forms — served by a Rust runtime in a fraction of the memory. Pick a name, pick your apps,
+      land in Desk.</p>
+    <div class="specs">
+      <span>🖥️ full <b>Frappe Desk</b> UI</span>
+      <span>⚡ <b>~15–25 MB</b> per site</span>
+      <span>🦀 <b>pure-Rust</b> runtime</span>
+      <span>🔒 <b>HTTPS</b> on your subdomain</span>
+    </div>
+  </header>
+
+  <!-- FORM -->
+  <div id="form">
+    <div class="card">
+      <div class="lbl"><span>1 · Choose your subdomain</span><small>lowercase, letters · numbers · hyphens</small></div>
+      <div class="domain" id="dom">
+        <input id="sub" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="my-bench">
+        <span class="suffix" id="suffix">.ferro.x.frappe.dev</span>
+      </div>
+      <div class="hint" id="hint">Your bench will live at this address.</div>
+    </div>
+
+    <div class="card">
+      <div class="lbl"><span>2 · Choose your apps</span><small id="appcount">select one or more</small></div>
+      <div class="grid" id="apps"></div>
+    </div>
+
+    <div class="card row" style="justify-content:space-between">
+      <div style="color:var(--mut);font-size:13.5px">
+        Free sandbox · signed in as Administrator · sleeps when idle
+      </div>
+      <button class="btn" id="go" disabled>Launch my Desk →</button>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div id="progress" class="hide">
+    <div class="card">
+      <div class="lbl"><span>Building <span class="mono" id="p-host"></span></span><small id="p-state">provisioning…</small></div>
+      <ul class="steps" id="steps"></ul>
+      <div id="errbox"></div>
+    </div>
+  </div>
+
+  <!-- SUCCESS -->
+  <div id="done" class="hide">
+    <div class="card ok-card">
+      <div class="ok-badge"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.2 4.3L19 7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h1 style="margin:14px 0 2px">Your Frappe Desk is live</h1>
+      <div class="ok-url" id="d-url"></div>
+      <p class="sub" style="margin:6px auto 18px">Sign in is automatic (Administrator). Browse your
+        workspaces, open any doctype's list &amp; form, create records — the real Desk UI, served in Rust.</p>
+      <div class="row" style="justify-content:center;margin-bottom:18px">
+        <a class="btn" id="d-open" target="_blank">Open Frappe Desk ↗</a>
+        <button class="btn ghost" id="d-another">Create another</button>
+      </div>
+      <div class="codeblock mono" id="d-curl"></div>
+    </div>
+  </div>
+
+  <p class="foot">
+    Ferro serves <b>Frappe Desk</b> from a Rust runtime — workspaces, lists, forms and CRUD writes are real;
+    some framework side-effects (email/PDF/realtime, custom controllers) are deferred by design.<br>
+    Built on <code>ferro</code> · the apps are © Frappe Technologies, cloned from upstream. Not affiliated with Frappe.
+  </p>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+let APPS=[], SELECTED=new Set(), SUFFIX=".ferro.x.frappe.dev", subOk=false, checkTimer=null;
+
+async function init(){
+  const r=await fetch('/api/apps').then(r=>r.json());
+  APPS=r.apps; SUFFIX="."+r.base_domain; $('#suffix').textContent=SUFFIX;
+  // Desk flow: the runtime is always the desk-capable pure-Rust ferro; no controller toggle.
+  const g=$('#apps');
+  g.innerHTML=APPS.map(a=>{
+    const meta = a.available
+      ? (a.doctypes+' doctypes'+(a.workspaces?(' · '+a.workspaces+' workspaces'):''))
+      : 'unavailable';
+    return `
+    <div class="app ${a.available?'':'off'}" data-app="${a.name}">
+      <div class="tick"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke="#fff" stroke-width="2" fill="none"/></svg></div>
+      <div class="nm">${a.name}</div>
+      <div class="ds">${a.desc||''}</div>
+      <div class="meta">${meta}</div>
+    </div>`;}).join('');
+  $$('.app').forEach(el=>el.onclick=()=>{
+    if(el.classList.contains('off'))return;
+    const n=el.dataset.app;
+    if(SELECTED.has(n)){SELECTED.delete(n);el.classList.remove('on');}
+    else{SELECTED.add(n);el.classList.add('on');}
+    refresh();
+  });
+}
+
+function refresh(){
+  const n=SELECTED.size;
+  $('#appcount').textContent = n? (n+' selected') : 'select one or more';
+  $('#go').disabled = !(subOk && n>0);
+}
+
+$('#sub').addEventListener('input',e=>{
+  let v=e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,'');
+  e.target.value=v;
+  subOk=false; refresh();
+  $('#dom').className='domain';
+  clearTimeout(checkTimer);
+  if(!v){$('#hint').className='hint';$('#hint').textContent='Your bench will live at this address.';return;}
+  $('#hint').className='hint';$('#hint').textContent='checking…';
+  checkTimer=setTimeout(async()=>{
+    const r=await fetch('/api/check?sub='+encodeURIComponent(v)).then(r=>r.json()).catch(()=>null);
+    if(!r)return;
+    subOk=r.available;
+    $('#dom').className='domain '+(r.available?'good':'bad');
+    $('#hint').className='hint '+(r.available?'good':'bad');
+    $('#hint').textContent = r.available ? ('✓ '+v+SUFFIX+' is available') : ('✗ '+r.reason);
+    refresh();
+  },280);
+});
+
+$('#go').onclick=async()=>{
+  const body={sub:$('#sub').value,apps:[...SELECTED]};
+  $('#go').disabled=true;
+  const r=await fetch('/api/provision',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)}).then(r=>r.json());
+  if(r.error){$('#hint').className='hint bad';$('#hint').textContent='✗ '+r.error;$('#go').disabled=false;return;}
+  $('#form').classList.add('hide');
+  $('#progress').classList.remove('hide');
+  $('#p-host').textContent=r.host;
+  poll(r.sub,r.host);
+};
+
+const ICON_OK='<div class="dot ok"></div>', ICON_RUN='<div class="dot run"></div>',
+      ICON_ERR='<div class="dot err"></div>', ICON_WAIT='<div class="dot"></div>';
+function renderSteps(steps){
+  $('#steps').innerHTML = steps.map(s=>{
+    const ic = s.status==='ok'?ICON_OK : s.status==='error'?ICON_ERR : ICON_RUN;
+    return `<li>${ic}<span class="stepname">${s.name.replace(':',' · ')}</span>
+            <span class="stepdet">${s.detail||''}</span></li>`;
+  }).join('');
+}
+async function poll(sub,host){
+  try{
+    const j=await fetch('/api/status?sub='+encodeURIComponent(sub)).then(r=>r.json());
+    if(j.steps) renderSteps(j.steps);
+    if(j.status==='ready'){return success(host);}
+    if(j.status==='error'){
+      $('#p-state').textContent='failed';
+      $('#errbox').innerHTML=`<div class="err-banner">${j.error||'provisioning failed'}</div>
+        <div style="margin-top:12px"><button class="btn ghost" onclick="location.reload()">Try again</button></div>`;
+      return;
+    }
+  }catch(e){}
+  setTimeout(()=>poll(sub,host),1000);
+}
+function success(host){
+  $('#progress').classList.add('hide');
+  $('#done').classList.remove('hide');
+  $('#d-url').textContent=host;
+  $('#d-open').href='https://'+host+'/app';          // straight into Desk
+  $('#d-curl').textContent=
+    `# Desk lives at https://${host}/app  —  it also speaks the Frappe REST API:\ncurl 'https://${host}/api/resource/DocType?limit_page_length=5'`;
+  $('#d-another').onclick=()=>location.reload();
+}
+init();
+</script>
+</body>
+</html>

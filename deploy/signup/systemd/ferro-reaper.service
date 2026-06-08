@@ -1,0 +1,8 @@
+[Unit]
+Description=Ferro idle-bench reaper
+After=ferro-control.service
+
+[Service]
+Type=oneshot
+# ask the control plane (the single writer of instances.json) to apply the idle policy
+ExecStart=/opt/ferro/bin/reap.sh

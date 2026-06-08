@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Ferro idle-bench reaper periodically
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,23 @@
+# Ferro edge — terminates TLS and forwards everything to the control plane (:8080),
+# which routes by Host: apex => signup app, <sub>.* => tenant dashboard + API proxy.
+#
+# TLS: ONE wildcard certificate (ferro.x.frappe.dev + *.ferro.x.frappe.dev), obtained out-of-band
+# by certbot via the ACME DNS-01 challenge through Route53 (blind UPSERT — the scoped IAM user can
+# change records but cannot list them, so Caddy's own route53 plugin can't be used). certbot renews
+# it and a deploy hook copies it to /etc/caddy/wildcard/ (caddy-readable) + reloads Caddy.
+# One cert covers every tenant: no per-subdomain issuance, no rate-limit exposure.
+
+{
+	email aditya@adityahase.com
+}
+
+# apex (signup app) + every tenant bench share one wildcard cert and one handler;
+# the control plane distinguishes them by Host.
+ferro.x.frappe.dev, *.ferro.x.frappe.dev {
+	tls /etc/caddy/wildcard/fullchain.pem /etc/caddy/wildcard/privkey.pem
+	encode gzip zstd
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}
