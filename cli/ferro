@@ -1,0 +1,893 @@
+#!/usr/bin/env python3
+"""
+ferro — the command line for the Ferro runtime, modelled on Frappe's `bench`.
+
+A *forge* is a workspace (the analog of a bench): it holds your apps, sites, logs and a
+Procfile, in a layout that is deliberately bench-compatible so the Frappe app frontends'
+own tooling (the frappe-ui vite proxy) works unmodified.
+
+    forge/
+      ferro.json                       # forge config
+      apps/<app>/                       # cloned app repos (with their frontend/)
+      sites/
+        common_site_config.json         # { "webserver_port": N }  (read by the vite proxy)
+        <site>/
+          site_config.json              # { db_type, encryption_key, installed_apps, ... }
+          db/<name>.db                  # the SQLite site database
+      logs/   Procfile
+
+Quick start:
+    ferro setup                         # install toolchain deps (rust, python, jemalloc, node)
+    ferro init myforge && cd myforge    # create a forge
+    ferro build                         # compile the runtime
+    ferro new-site dev.localhost        # create a site from the frappe-core seed
+    ferro get-app crm                   # fetch an app
+    ferro install-app crm               # materialise its schema into the site
+    ferro serve                         # serve the REST API
+    ferro dev crm                       # run the app's frontend (vite) against ferro
+
+Run `ferro <command> -h` for command help, or `ferro help` for the full list.
+"""
+import argparse
+import gzip
+import json
+import os
+import re
+import secrets
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+# ------------------------------------------------------------------ paths / home
+
+def ferro_home():
+    """The Ferro install root (the monorepo) — parent of cli/. Overridable via $FERRO_HOME."""
+    env = os.environ.get("FERRO_HOME")
+    if env:
+        return os.path.abspath(env)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+HOME = ferro_home()
+# In the monorepo the Rust runtime source lives at the repo root (Cargo.toml, src/),
+# not under a runtime/ subdir as in the old standalone ferro-stack.
+RUNTIME_SRC = HOME
+SHIM_DIR = os.path.join(HOME, "framework", "shim")
+SEED_GZ = os.path.join(HOME, "framework", "seed", "core.db.gz")
+BUILD_DB = os.path.join(HOME, "framework", "build_db.py")
+POPULATE = os.path.join(HOME, "framework", "populate_demo_data.py")
+SELF = os.path.abspath(__file__)
+# The install manifest (app registry + version) sits next to this CLI, in cli/.
+INSTALL_CFG = os.path.join(os.path.dirname(SELF), "ferro.json")
+
+# ------------------------------------------------------------------ pretty output
+
+def _c(code, s):
+    return s if os.environ.get("NO_COLOR") or not sys.stderr.isatty() else f"\033[{code}m{s}\033[0m"
+
+def info(msg):  print(_c("36", "==>") + " " + msg, file=sys.stderr)
+def good(msg):  print(_c("32", " ok") + " " + msg, file=sys.stderr)
+def warn(msg):  print(_c("33", "  !") + " " + msg, file=sys.stderr)
+def die(msg, code=1):
+    print(_c("31", "err") + " " + msg, file=sys.stderr)
+    sys.exit(code)
+
+# ------------------------------------------------------------------ json helpers
+
+def load_json(path, default=None):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {} if default is None else default
+
+def save_json(path, obj):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(obj, f, indent=1)
+        f.write("\n")
+
+def registry():
+    """The app registry (name -> {git, branch}) from <home>/ferro.json."""
+    return load_json(INSTALL_CFG, {}).get("apps", {})
+
+# ------------------------------------------------------------------ forge discovery
+
+def find_forge(explicit=None):
+    """Locate the forge dir: --forge / $FERRO_FORGE / nearest ancestor with a forge ferro.json."""
+    cand = explicit or os.environ.get("FERRO_FORGE")
+    if cand:
+        return os.path.abspath(cand)
+    d = os.getcwd()
+    while True:
+        cfg = os.path.join(d, "ferro.json")
+        if os.path.isfile(cfg) and load_json(cfg).get("forge"):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+
+def require_forge(args):
+    f = find_forge(getattr(args, "forge", None))
+    if not f:
+        die("not inside a forge. Run `ferro init <name>` first, or pass --forge <dir>.")
+    return f
+
+def forge_cfg_path(forge):
+    return os.path.join(forge, "ferro.json")
+
+# ------------------------------------------------------------------ toolchain discovery
+
+def runtime_dir():
+    """Where the compiled binaries live."""
+    env = os.environ.get("FERRO_RUNTIME_DIR")
+    if env:
+        return env
+    primary = os.path.join(RUNTIME_SRC, "target", "release")
+    if any(os.path.exists(os.path.join(primary, b)) for b in ("ferro", "ferrod", "ferro-native")):
+        return primary
+    # on-box convenience: the original dev build location, if present
+    legacy = "/home/frappe/ferro/target/release"
+    if os.path.isdir(legacy):
+        return legacy
+    return primary
+
+def binary(name, required=True):
+    p = os.path.join(runtime_dir(), name)
+    if os.path.exists(p):
+        return p
+    if required:
+        die(f"runtime binary '{name}' not found in {runtime_dir()}.\n"
+            f"    Build it with:  ferro build {'' if name=='ferrod' else name.replace('ferro-native','native').replace('ferrod','').replace('ferro','rust')}".rstrip())
+    return None
+
+def find_cargo():
+    for c in (shutil.which("cargo"), os.path.expanduser("~/.cargo/bin/cargo")):
+        if c and os.path.exists(c):
+            return c
+    return None
+
+def find_embeddable_python():
+    """Return (python_bin, lib_dir) for a CPython with a shared libpython (for ferrod), or (None, None)."""
+    # explicit override
+    env = os.environ.get("PYO3_PYTHON")
+    cands = [env] if env else []
+    # pyenv versions (prefer 3.13, then 3.12)
+    pyenv = os.path.expanduser("~/.pyenv/versions")
+    if os.path.isdir(pyenv):
+        for v in sorted(os.listdir(pyenv), reverse=True):
+            if v.startswith(("3.13", "3.12", "3.11")):
+                cands.append(os.path.join(pyenv, v, "bin", "python3"))
+    for py in cands:
+        if not py or not os.path.exists(py):
+            continue
+        try:
+            libdir = subprocess.check_output(
+                [py, "-c", "import sysconfig;print(sysconfig.get_config_var('LIBDIR'))"],
+                text=True).strip()
+            # require a shared lib (embeddable)
+            shared = subprocess.check_output(
+                [py, "-c", "import sysconfig;print(sysconfig.get_config_var('Py_ENABLE_SHARED'))"],
+                text=True).strip()
+            if shared == "1":
+                return py, libdir
+        except Exception:
+            continue
+    return None, None
+
+def jemalloc_path():
+    env = os.environ.get("FERRO_JEMALLOC")
+    if env and os.path.exists(env):
+        return env
+    for p in ("/usr/lib/x86_64-linux-gnu/libjemalloc.so.2",
+              "/usr/lib/aarch64-linux-gnu/libjemalloc.so.2",
+              "/usr/local/lib/libjemalloc.so.2",
+              "/usr/lib/libjemalloc.so.2"):
+        if os.path.exists(p):
+            return p
+    return None
+
+# ------------------------------------------------------------------ site helpers
+
+def sites_dir(forge):
+    return os.path.join(forge, "sites")
+
+def apps_dir(forge):
+    return os.path.join(forge, "apps")
+
+def resolve_site(forge, name=None):
+    """Return the site directory. Defaults to forge ferro.json default_site, else the sole site."""
+    sd = sites_dir(forge)
+    if name:
+        return os.path.join(sd, name)
+    cfg = load_json(forge_cfg_path(forge))
+    if cfg.get("default_site"):
+        return os.path.join(sd, cfg["default_site"])
+    if os.path.isdir(sd):
+        sites = [d for d in os.listdir(sd) if os.path.isdir(os.path.join(sd, d))]
+        if len(sites) == 1:
+            return os.path.join(sd, sites[0])
+        if not sites:
+            die("no sites yet. Run `ferro new-site <name>`.")
+        die(f"multiple sites ({', '.join(sites)}); pass --site <name> or set default_site.")
+    die("no sites yet. Run `ferro new-site <name>`.")
+
+def site_db(site):
+    db = os.path.join(site, "db")
+    if os.path.isdir(db):
+        hits = sorted(f for f in os.listdir(db) if f.endswith(".db"))
+        if hits:
+            return os.path.join(db, hits[0])
+    return None
+
+def backend_env(forge, want_python=False, cache_kb=None):
+    """Environment for running a runtime binary in low-memory config."""
+    env = dict(os.environ)
+    env["FERRO_SHIM"] = SHIM_DIR
+    env["FERRO_REPOS"] = apps_dir(forge)
+    env["FERRO_CACHE_KB"] = str(cache_kb or os.environ.get("FERRO_CACHE_KB", 256))
+    je = jemalloc_path()
+    if je:
+        env["LD_PRELOAD"] = je + (":" + env["LD_PRELOAD"] if env.get("LD_PRELOAD") else "")
+        env.setdefault("MALLOC_CONF",
+                       "narenas:1,dirty_decay_ms:0,muzzy_decay_ms:0,tcache:false,background_thread:true")
+    if want_python:
+        py, libdir = find_embeddable_python()
+        if libdir:
+            env["LD_LIBRARY_PATH"] = libdir + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
+        env.setdefault("PYTHONNODEBUGRANGES", "1")
+    return env
+
+def run(cmd, env=None, cwd=None, check=True):
+    info(" ".join(str(c) for c in cmd))
+    r = subprocess.run(cmd, env=env, cwd=cwd)
+    if check and r.returncode != 0:
+        die(f"command failed ({r.returncode}): {' '.join(str(c) for c in cmd)}", r.returncode)
+    return r.returncode
+
+# ================================================================== commands
+
+def cmd_setup(args):
+    """Install the toolchain dependencies (rust, python, jemalloc, node/yarn)."""
+    script = os.path.join(HOME, "scripts", "setup.sh")
+    os.execv("/bin/bash", ["bash", script] + (["--yes"] if args.yes else []))
+
+def cmd_doctor(args):
+    """Report on the toolchain + built binaries."""
+    print(_c("1", "Ferro doctor"))
+    print(f"  ferro_home     {HOME}")
+    cargo = find_cargo()
+    print(f"  cargo          {cargo or _c('31','MISSING — run `ferro setup`')}")
+    if cargo:
+        try:
+            print(f"                 {subprocess.check_output([cargo,'--version'],text=True).strip()}")
+        except Exception:
+            pass
+    py, libdir = find_embeddable_python()
+    print(f"  python(embed)  {py or _c('33','none — ferrod (embedded-Python) needs CPython built --enable-shared')}")
+    if libdir:
+        print(f"                 libdir {libdir}")
+    je = jemalloc_path()
+    print(f"  jemalloc       {je or _c('33','MISSING (optional — improves memory; run `ferro setup`)')}")
+    node = shutil.which("node"); yarn = shutil.which("yarn")
+    print(f"  node / yarn    {node or _c('33','none')} / {yarn or _c('33','none (needed for `ferro dev`/frontend build)')}")
+    print(f"  runtime dir    {runtime_dir()}")
+    for b in ("ferro", "ferrod", "ferro-native"):
+        p = os.path.join(runtime_dir(), b)
+        print(f"    {b:13s}{_c('32','built') if os.path.exists(p) else _c('33','not built')}  {p if os.path.exists(p) else ''}")
+    print(f"  seed db        {'present' if os.path.exists(SEED_GZ) else _c('31','MISSING')}  {SEED_GZ}")
+    forge = find_forge(getattr(args, "forge", None))
+    print(f"  forge          {forge or '(none — run `ferro init`)'}")
+
+def cmd_build(args):
+    """Compile a runtime binary with cargo (ferrod by default)."""
+    cargo = find_cargo() or die("cargo not found — run `ferro setup` (or install rustup).")
+    which = args.runtime
+    env = dict(os.environ)
+    targets = {
+        "rust":   (["build", "--release", "--bin", "ferro"], "ferro"),
+        "ferro":  (["build", "--release", "--bin", "ferro"], "ferro"),
+        "ferrod": (["build", "--release", "--features", "python", "--bin", "ferrod"], "ferrod"),
+        "native": (["build", "--release", "--features", "native", "--bin", "ferro-native"], "ferro-native"),
+    }
+    if which == "all":
+        order = ["rust", "ferrod", "native"]
+    else:
+        order = [which]
+    for t in order:
+        if t not in targets:
+            die(f"unknown runtime '{t}' (choose: ferro/rust, ferrod, native, all)")
+        flags, outname = targets[t]
+        if t == "ferrod":
+            py, libdir = find_embeddable_python()
+            if not py:
+                if which == "all":
+                    warn("no embeddable CPython — skipping ferrod (build it after `ferro setup`)")
+                    continue
+                die("ferrod needs a CPython built with --enable-shared. Run `ferro setup`, "
+                    "or set PYO3_PYTHON to such an interpreter.")
+            env["PYO3_PYTHON"] = py
+            info(f"using PYO3_PYTHON={py}")
+        if t == "native":
+            gen = os.path.join(RUNTIME_SRC, "src", "native", "generated.rs")
+            if not os.path.exists(gen) or args.transpile:
+                info("transpiling app controllers -> generated.rs")
+                _transpile(args)
+        run([cargo] + flags, env=env, cwd=RUNTIME_SRC)
+        good(f"built {outname} -> {os.path.join(runtime_dir(), outname)}")
+
+def _transpile(args):
+    forge = find_forge(getattr(args, "forge", None))
+    repos = apps_dir(forge) if forge else os.environ.get("FERRO_REPOS", "")
+    env = dict(os.environ)
+    if repos:
+        env["FERRO_REPOS"] = repos
+    out = os.path.join(RUNTIME_SRC, "src", "native", "generated.rs")
+    run([sys.executable, os.path.join(HOME, "transpile", "transpile.py")], env=env, check=False)
+
+def cmd_init(args):
+    """Create a new forge (workspace)."""
+    forge = os.path.abspath(args.name)
+    if os.path.exists(forge) and os.listdir(forge):
+        die(f"{forge} exists and is not empty")
+    for sub in ("apps", "sites", "logs", "config"):
+        os.makedirs(os.path.join(forge, sub), exist_ok=True)
+    save_json(forge_cfg_path(forge), {
+        "forge": True,
+        "ferro_home": HOME,
+        "runtime": "ferrod",
+        "default_site": None,
+        "webserver_port": args.port,
+    })
+    # common_site_config.json drives the frappe-ui vite proxy (webserver_port)
+    save_json(os.path.join(forge, "sites", "common_site_config.json"), {
+        "webserver_port": args.port,
+        "socketio_port": args.port + 1,
+        "developer_mode": 1,
+    })
+    # a Procfile for `ferro start`
+    with open(os.path.join(forge, "Procfile"), "w") as f:
+        f.write(f"web: {SELF} serve --port {args.port}\n"
+                f"# frontend: {SELF} dev crm   # uncomment after `ferro get-app crm`\n")
+    good(f"forge created at {forge}")
+    info("next:  cd %s && ferro build && ferro new-site dev.localhost" % args.name)
+
+def cmd_new_site(args):
+    """Create a site from the frappe-core seed."""
+    forge = require_forge(args)
+    name = args.name
+    site = os.path.join(sites_dir(forge), name)
+    if os.path.exists(site):
+        die(f"site {name} already exists at {site}")
+    if not os.path.exists(SEED_GZ):
+        die(f"seed db missing: {SEED_GZ}")
+    os.makedirs(os.path.join(site, "db"))
+    os.makedirs(os.path.join(site, "private", "backups"), exist_ok=True)
+    os.makedirs(os.path.join(site, "public", "files"), exist_ok=True)
+    db_name = "_" + secrets.token_hex(8)
+    db_path = os.path.join(site, "db", db_name + ".db")
+    info(f"decompressing frappe-core seed -> {db_path}")
+    with gzip.open(SEED_GZ, "rb") as src, open(db_path, "wb") as dst:
+        shutil.copyfileobj(src, dst)
+    # a fresh Fernet-shaped encryption key (32 url-safe-base64 bytes)
+    enc_key = secrets.token_urlsafe(32)[:43] + "="
+    save_json(os.path.join(site, "site_config.json"), {
+        "db_type": "sqlite",
+        "db_name": db_name,
+        "encryption_key": enc_key,
+        "installed_apps": ["frappe"],
+    })
+    # make it the default site if none set
+    cfg = load_json(forge_cfg_path(forge))
+    if not cfg.get("default_site"):
+        cfg["default_site"] = name
+        save_json(forge_cfg_path(forge), cfg)
+        info(f"set default_site = {name}")
+    good(f"site {name} created (278 frappe-core doctypes, Administrator user)")
+    info("next:  ferro get-app crm && ferro install-app crm")
+
+def cmd_get_app(args):
+    """Fetch an app repo into the forge's apps/ (git clone, or copy from a local mirror)."""
+    forge = require_forge(args)
+    name = args.app
+    dest = os.path.join(apps_dir(forge), name)
+    if os.path.exists(dest):
+        warn(f"app {name} already present at {dest}")
+        return
+    reg = registry()
+    # 1) explicit --mirror, 2) $FERRO_APP_MIRROR, 3) the known on-box clones, 4) git clone upstream
+    mirrors = [m for m in (args.mirror, os.environ.get("FERRO_APP_MIRROR"),
+                           "/home/frappe/ferro-apps-investigation/repos") if m]
+    for m in mirrors:
+        cand = os.path.join(m, name)
+        if os.path.isdir(cand):
+            info(f"copying {name} from local mirror {cand}")
+            shutil.copytree(cand, dest, symlinks=True,
+                            ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__"))
+            good(f"app {name} at {dest}")
+            return
+    ent = reg.get(name)
+    url = args.git or (ent.get("git") if ent else f"https://github.com/frappe/{name}.git")
+    branch = args.branch or (ent.get("branch") if ent else None)
+    cmd = ["git", "clone", "--depth", "1"]
+    if branch:
+        cmd += ["--branch", branch]
+    cmd += [url, dest]
+    if not shutil.which("git"):
+        die("git not found — install it or use --mirror <dir>")
+    run(cmd)
+    good(f"app {name} cloned to {dest}")
+
+def cmd_install_app(args):
+    """Materialise an app's DocType schema into a site (the ferro analog of `bench migrate`)."""
+    forge = require_forge(args)
+    site = resolve_site(forge, args.site)
+    db = site_db(site) or die(f"no db in {site} — run `ferro new-site` first")
+    app = args.app
+    if not os.path.isdir(os.path.join(apps_dir(forge), app)):
+        die(f"app {app} not in apps/ — run `ferro get-app {app}` first")
+    env = dict(os.environ)
+    env["FERRO_REPOS"] = apps_dir(forge)
+    run([sys.executable, BUILD_DB, "--db", db, "--repos", apps_dir(forge), "--apps", app], env=env)
+    # record in site_config.installed_apps
+    scfg_path = os.path.join(site, "site_config.json")
+    scfg = load_json(scfg_path)
+    apps = scfg.get("installed_apps", ["frappe"])
+    if app not in apps:
+        apps.append(app)
+        scfg["installed_apps"] = apps
+        save_json(scfg_path, scfg)
+    good(f"installed {app} into {os.path.basename(site)}")
+
+def cmd_populate(args):
+    """Fill read-path doctypes with representative demo rows."""
+    forge = require_forge(args)
+    site = resolve_site(forge, args.site)
+    db = site_db(site) or die("no site db")
+    run([sys.executable, POPULATE, "--db", db, "--rows", str(args.rows)])
+
+def _runtime_choice(forge, args):
+    r = getattr(args, "runtime", None) or load_json(forge_cfg_path(forge)).get("runtime", "ferrod")
+    return {"ferro": "ferro", "rust": "ferro", "ferrod": "ferrod",
+            "native": "ferro-native", "ferro-native": "ferro-native"}.get(r, r)
+
+def _warn_ferrod_only(rt, args):
+    # --apps / --load select & lazy-load controllers — only ferrod honors them. Warn rather
+    # than silently drop, so the user isn't misled into thinking apps were loaded/selected.
+    if rt != "ferrod" and getattr(args, "apps", None):
+        warn(f"--apps applies only to the ferrod runtime; ignored for '{rt}'")
+
+def cmd_serve(args):
+    """Serve the REST API for a site."""
+    forge = require_forge(args)
+    site = resolve_site(forge, args.site)
+    site_db(site) or die("no site db — run `ferro new-site`")
+    rt = _runtime_choice(forge, args)
+    _warn_ferrod_only(rt, args)
+    bin_path = binary(rt)
+    want_py = (rt == "ferrod")
+    env = backend_env(forge, want_python=want_py)
+    port = args.port or load_json(forge_cfg_path(forge)).get("webserver_port", 8000)
+    cmd = [bin_path, "serve", site, "--port", str(port)]
+    if args.threads:
+        cmd += ["--threads", str(args.threads)]
+    # `--default-user` is accepted by serve on all three runtimes; `--user` is not (pure ferro serve)
+    cmd += ["--default-user", args.user]
+    if rt == "ferrod":
+        if args.apps:
+            cmd += ["--apps", args.apps]
+        cmd += ["--load", args.load]
+    if args.dev:
+        cmd += ["--dev"]
+    info(f"runtime={rt}  site={os.path.basename(site)}  http://127.0.0.1:{port}")
+    os.execvpe(cmd[0], cmd, env)
+
+def cmd_request(args):
+    """Issue a single in-process request (no server)."""
+    forge = require_forge(args)
+    site = resolve_site(forge, args.site)
+    rt = _runtime_choice(forge, args)
+    _warn_ferrod_only(rt, args)
+    bin_path = binary(rt)
+    env = backend_env(forge, want_python=(rt == "ferrod"))
+    cmd = [bin_path, "request", site, args.method.upper(), args.url]
+    if args.body is not None:
+        cmd.append(args.body)
+    if rt == "ferrod":
+        if args.apps:
+            cmd += ["--apps", args.apps]
+        cmd += ["--load", args.load]
+    cmd += ["--user", args.user]
+    if args.dev:
+        cmd += ["--dev"]
+    os.execvpe(cmd[0], cmd, env)
+
+def _require_mem_runtime(rt):
+    # only ferrod / ferro-native expose `measure` and `loadtest`; pure ferro does not
+    if rt == "ferro":
+        die("pure-ferro has no measure/loadtest subcommand — use --runtime ferrod (or native), "
+            "or run `ferro serve` and load-test it externally.")
+
+def cmd_measure(args):
+    """Report post-boot memory (RSS/PSS/USS) for a site."""
+    forge = require_forge(args)
+    site = resolve_site(forge, args.site)
+    rt = _runtime_choice(forge, args)
+    _require_mem_runtime(rt)
+    _warn_ferrod_only(rt, args)
+    bin_path = binary(rt)
+    env = backend_env(forge, want_python=(rt == "ferrod"))
+    cmd = [bin_path, "measure", site]
+    if rt == "ferrod":
+        if args.apps:
+            cmd += ["--apps", args.apps]
+        cmd += ["--load", args.load]
+    os.execvpe(cmd[0], cmd, env)
+
+def cmd_loadtest(args):
+    """Drive a write/read load and report peak memory + throughput."""
+    forge = require_forge(args)
+    site = resolve_site(forge, args.site)
+    rt = _runtime_choice(forge, args)
+    _require_mem_runtime(rt)
+    _warn_ferrod_only(rt, args)
+    bin_path = binary(rt)
+    env = backend_env(forge, want_python=(rt == "ferrod"))
+    cmd = [bin_path, "loadtest", site, "--threads", str(args.threads)]
+    if args.rounds:
+        cmd += ["--rounds", str(args.rounds)]
+    if rt == "ferrod":
+        if args.apps:
+            cmd += ["--apps", args.apps]
+        cmd += ["--load", args.load]
+    os.execvpe(cmd[0], cmd, env)
+
+def cmd_provision_key(args):
+    """Provision/print an api_key:api_secret for a user (pure-ferro runtime)."""
+    forge = require_forge(args)
+    site = resolve_site(forge, args.site)
+    bin_path = binary("ferro")
+    env = backend_env(forge)
+    os.execvpe(bin_path, [bin_path, "provision-key", site, args.user], env)
+
+# ----------------------------------------------------------- frontend (dev / serve)
+
+def _app_frontend_dir(forge, app):
+    base = os.path.join(apps_dir(forge), app)
+    for sub in ("frontend", "desk", "dashboard"):
+        d = os.path.join(base, sub)
+        if os.path.isfile(os.path.join(d, "package.json")):
+            return d
+    return None
+
+def cmd_dev(args):
+    """Run an app's frontend dev server (vite), proxied to the ferro backend."""
+    forge = require_forge(args)
+    app = args.app
+    fdir = _app_frontend_dir(forge, app) or die(
+        f"no frontend/ in apps/{app}. Is it a frappe-ui app? (crm, helpdesk, gameplan, hrms)")
+    if not shutil.which("yarn") and not shutil.which("npm"):
+        die("node/yarn not found — run `ferro setup` (installs node + yarn).")
+    pm = "yarn" if shutil.which("yarn") else "npm"
+    # ensure the vite proxy points at our backend
+    port = args.port or load_json(forge_cfg_path(forge)).get("webserver_port", 8000)
+    csc = os.path.join(forge, "sites", "common_site_config.json")
+    cfg = load_json(csc)
+    cfg["webserver_port"] = port
+    save_json(csc, cfg)
+    if not os.path.isdir(os.path.join(fdir, "node_modules")):
+        warn("node_modules missing — installing (first run is slow)…")
+        run([pm, "install"], cwd=fdir, check=False)
+    info(f"vite dev server for {app}; proxying /api,/assets,/files -> 127.0.0.1:{port}")
+    warn("note: the SPA calls Frappe /api/method/* surfaces ferro does not implement; "
+         "the /api/resource CRUD surface works. See docs/limitations.md.")
+    os.execvp(pm, [pm, "run", "dev"] if pm == "npm" else [pm, "dev"])
+
+def cmd_frontend(args):
+    """Zero-node fallback: static-serve a built frontend + reverse-proxy API to ferro."""
+    import http.server
+    import urllib.request
+    import urllib.error
+    forge = require_forge(args)
+    backend = f"http://127.0.0.1:{args.backend_port}"
+    static_root = args.static
+    if args.app and not static_root:
+        fdir = _app_frontend_dir(forge, args.app)
+        for cand in (os.path.join(fdir or "", "dist"),
+                     os.path.join(apps_dir(forge), args.app, args.app, "public")):
+            if os.path.isdir(cand):
+                static_root = cand
+                break
+    PROXY_PREFIXES = ("/api", "/files", "/private", "/method", "/assets")
+
+    class H(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+        def log_message(self, *a):  # quiet
+            pass
+        def _proxy(self):
+            url = backend + self.path
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            body = self.rfile.read(length) if length else None
+            req = urllib.request.Request(url, data=body, method=self.command)
+            for k, v in self.headers.items():
+                if k.lower() not in ("host", "content-length", "connection"):
+                    req.add_header(k, v)
+            try:
+                with urllib.request.urlopen(req) as r:
+                    data = r.read()
+                    self.send_response(r.status)
+                    for k, v in r.headers.items():
+                        if k.lower() not in ("transfer-encoding", "connection", "content-length"):
+                            self.send_header(k, v)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+            except urllib.error.HTTPError as e:
+                data = e.read()
+                self.send_response(e.code)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except Exception as e:
+                self.send_error(502, str(e))
+        def _static(self):
+            if not static_root:
+                return self._proxy()
+            rel = self.path.split("?", 1)[0].lstrip("/")
+            fp = os.path.join(static_root, rel)
+            if not os.path.isfile(fp):
+                fp = os.path.join(static_root, "index.html")  # SPA fallback
+            if not os.path.isfile(fp):
+                return self.send_error(404)
+            import mimetypes
+            data = open(fp, "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Type", mimetypes.guess_type(fp)[0] or "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        def do_GET(self):
+            (self._proxy if self.path.startswith(PROXY_PREFIXES) else self._static)()
+        do_HEAD = do_GET
+        def do_POST(self): self._proxy()
+        do_PUT = do_DELETE = do_PATCH = do_POST
+
+    srv = http.server.ThreadingHTTPServer(("0.0.0.0", args.port), H)
+    info(f"frontend gateway on http://127.0.0.1:{args.port}  -> backend {backend}"
+         + (f"  static={static_root}" if static_root else "  (pure proxy)"))
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+# ----------------------------------------------------------- start (Procfile)
+
+def cmd_start(args):
+    """Run every process in the forge Procfile (web, frontend, …)."""
+    forge = require_forge(args)
+    pf = os.path.join(forge, "Procfile")
+    if not os.path.isfile(pf):
+        die("no Procfile in forge")
+    procs = []
+    for line in open(pf):
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        name, cmd = line.split(":", 1)
+        procs.append((name.strip(), cmd.strip()))
+    if not procs:
+        die("Procfile has no processes")
+    colors = ["36", "32", "35", "33", "34", "31"]
+    running = []
+    def shutdown(*_):
+        for _, p in running:
+            if p.poll() is None:
+                p.terminate()
+        sys.exit(0)
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+    for i, (name, cmd) in enumerate(procs):
+        info(f"start [{name}] {cmd}")
+        p = subprocess.Popen(cmd, shell=True, cwd=forge, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, bufsize=1)
+        running.append((name, p))
+    import threading
+    def pump(name, color, p):
+        for ln in iter(p.stdout.readline, ""):
+            sys.stdout.write(_c(color, f"{name:9s}| ") + ln)
+            sys.stdout.flush()
+    threads = [threading.Thread(target=pump, args=(n, colors[i % len(colors)], p), daemon=True)
+               for i, (n, p) in enumerate(running)]
+    for t in threads:
+        t.start()
+    try:
+        while any(p.poll() is None for _, p in running):
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        shutdown()
+
+def cmd_verify(args):
+    """Functional proof: reads in Rust, writes drive real controllers (needs ferrod + apps)."""
+    forge = require_forge(args)
+    site = resolve_site(forge, args.site)
+    bin_path = binary("ferrod")
+    env = backend_env(forge, want_python=True)
+    fd = [bin_path, "request", site]
+    apps = args.apps or "crm,helpdesk,gameplan,hrms,erpnext"
+    def req(method, url, body=None, dev=False):
+        c = fd + [method, url] + ([body] if body else []) + ["--apps", apps, "--load", "all", "--user", "Administrator"]
+        if dev:
+            c += ["--dev"]
+        return subprocess.run(c, env=env, capture_output=True, text=True).stdout
+    passed = failed = 0
+    def check(desc, want, got):
+        nonlocal passed, failed
+        if want in got:
+            print(_c("32", "  PASS") + f": {desc}"); passed += 1
+        else:
+            print(_c("31", "  FAIL") + f": {desc} (want '{want}')"); failed += 1
+    print("== read path (pure Rust): list CRM Deals ==")
+    check("GET list returns data", '"data"', req("GET", '/api/resource/CRM Deal?fields=["name"]&limit_page_length=2'))
+    print("== write path (controller lifecycle): hrms RetentionBonus rejects past date ==")
+    out = req("POST", "/api/resource/Retention Bonus", '{"bonus_payment_date":"2020-01-01","bonus_amount":1000}', dev=True)
+    check("past date -> controller throw (417)", "HTTP 417", out)
+    check("exact controller message", "cannot be a past date", out)
+    print(f"\n{_c('1', f'RESULT: {passed} passed, {failed} failed')}")
+    sys.exit(1 if failed else 0)
+
+def cmd_version(args):
+    ver = load_json(INSTALL_CFG).get("version", "0.1.0")
+    print(f"ferro {ver}  (home {HOME})")
+    for b in ("ferro", "ferrod", "ferro-native"):
+        p = os.path.join(runtime_dir(), b)
+        print(f"  {b:13s}{'built' if os.path.exists(p) else 'not built'}")
+
+def cmd_list_apps(args):
+    reg = registry()
+    print(_c("1", "Known apps (registry):"))
+    for name, ent in reg.items():
+        print(f"  {name:12s} {ent.get('git','')}  ({ent.get('desc','')})")
+    forge = find_forge(getattr(args, "forge", None))
+    if forge and os.path.isdir(apps_dir(forge)):
+        installed = sorted(d for d in os.listdir(apps_dir(forge)) if os.path.isdir(os.path.join(apps_dir(forge), d)))
+        print(_c("1", f"\nIn forge {forge}:"))
+        for a in installed:
+            print(f"  {a}")
+
+def cmd_bootstrap(args):
+    """One-shot quick start (delegates to scripts/bootstrap.sh)."""
+    script = os.path.join(HOME, "scripts", "bootstrap.sh")
+    argv = ["bash", script]
+    if args.forge_name:
+        argv += ["--forge", args.forge_name]
+    if args.apps:
+        argv += ["--apps", args.apps]
+    if args.no_setup:
+        argv += ["--no-setup"]
+    os.execv("/bin/bash", argv)
+
+# ================================================================== arg parsing
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="ferro", description="The Ferro runtime CLI (a bench for ferro).")
+    p.add_argument("--forge", help="forge dir (default: discovered from cwd / $FERRO_FORGE)")
+    sub = p.add_subparsers(dest="cmd")
+
+    def add_site(sp):
+        sp.add_argument("--site", help="site name (default: forge default_site)")
+
+    sp = sub.add_parser("setup", help="install toolchain dependencies")
+    sp.add_argument("--yes", action="store_true", help="non-interactive")
+    sp.set_defaults(fn=cmd_setup)
+
+    sp = sub.add_parser("bootstrap", help="one-shot: setup+build+site+apps+serve-ready")
+    sp.add_argument("--forge", dest="forge_name", default="forge", help="forge dir to create (default: ./forge)")
+    sp.add_argument("--apps", help="comma apps (default: crm,helpdesk,gameplan,hrms,erpnext)")
+    sp.add_argument("--no-setup", action="store_true", help="skip dependency install")
+    sp.set_defaults(fn=cmd_bootstrap)
+
+    sp = sub.add_parser("doctor", help="check toolchain + binaries")
+    sp.set_defaults(fn=cmd_doctor)
+
+    sp = sub.add_parser("build", help="compile a runtime binary (ferrod default)")
+    sp.add_argument("runtime", nargs="?", default="ferrod", help="ferrod | ferro/rust | native | all")
+    sp.add_argument("--transpile", action="store_true", help="(native) re-transpile controllers first")
+    sp.set_defaults(fn=cmd_build)
+
+    sp = sub.add_parser("init", help="create a new forge (workspace)")
+    sp.add_argument("name", help="forge directory")
+    sp.add_argument("--port", type=int, default=8000, help="default webserver port")
+    sp.set_defaults(fn=cmd_init)
+
+    sp = sub.add_parser("new-site", help="create a site from the frappe-core seed")
+    sp.add_argument("name", help="site name, e.g. dev.localhost")
+    sp.set_defaults(fn=cmd_new_site)
+
+    sp = sub.add_parser("get-app", help="fetch an app repo into the forge")
+    sp.add_argument("app")
+    sp.add_argument("--git", help="git URL override")
+    sp.add_argument("--branch", help="branch")
+    sp.add_argument("--mirror", help="copy from a local mirror dir instead of cloning")
+    sp.set_defaults(fn=cmd_get_app)
+
+    sp = sub.add_parser("install-app", help="materialise an app's schema into a site")
+    add_site(sp); sp.add_argument("app")
+    sp.set_defaults(fn=cmd_install_app)
+
+    sp = sub.add_parser("populate", help="fill read-path doctypes with demo rows")
+    add_site(sp); sp.add_argument("--rows", type=int, default=3000)
+    sp.set_defaults(fn=cmd_populate)
+
+    def add_runtime(sp):
+        sp.add_argument("--runtime", help="ferrod | ferro/rust | native (default: forge runtime)")
+        sp.add_argument("--apps", help="(ferrod) comma apps to load")
+        sp.add_argument("--load", default="lazy", help="(ferrod) all | lazy | none")
+
+    sp = sub.add_parser("serve", help="serve the REST API")
+    add_site(sp); add_runtime(sp)
+    sp.add_argument("--port", type=int); sp.add_argument("--threads", type=int)
+    sp.add_argument("--user", default="Administrator", help="default user (bypasses token auth)")
+    sp.add_argument("--dev", action="store_true", help="expose raw error text")
+    sp.set_defaults(fn=cmd_serve)
+
+    sp = sub.add_parser("request", help="one in-process request (no server)")
+    add_site(sp); add_runtime(sp)
+    sp.add_argument("method"); sp.add_argument("url"); sp.add_argument("body", nargs="?")
+    sp.add_argument("--user", default="Administrator"); sp.add_argument("--dev", action="store_true")
+    sp.set_defaults(fn=cmd_request)
+
+    sp = sub.add_parser("measure", help="post-boot memory (RSS/PSS/USS)")
+    add_site(sp); add_runtime(sp)
+    sp.set_defaults(fn=cmd_measure)
+
+    sp = sub.add_parser("loadtest", help="peak memory + throughput under load")
+    add_site(sp); add_runtime(sp)
+    sp.add_argument("--threads", type=int, default=4); sp.add_argument("--rounds", type=int, default=8)
+    sp.set_defaults(fn=cmd_loadtest)
+
+    sp = sub.add_parser("bench", help="alias for loadtest", aliases=["matrix"])
+    add_site(sp); add_runtime(sp)
+    sp.add_argument("--threads", type=int, default=4); sp.add_argument("--rounds", type=int, default=8)
+    sp.set_defaults(fn=cmd_loadtest)
+
+    sp = sub.add_parser("dev", help="run an app's frontend dev server (vite) -> ferro")
+    sp.add_argument("app"); sp.add_argument("--port", type=int, help="backend port to proxy to")
+    sp.set_defaults(fn=cmd_dev)
+
+    sp = sub.add_parser("frontend", help="zero-node static+proxy gateway for a built frontend")
+    sp.add_argument("app", nargs="?")
+    sp.add_argument("--static", help="static dir to serve (default: app's dist/public)")
+    sp.add_argument("--port", type=int, default=8080, help="gateway port")
+    sp.add_argument("--backend-port", type=int, default=8000, help="ferro backend port")
+    sp.set_defaults(fn=cmd_frontend)
+
+    sp = sub.add_parser("start", help="run all Procfile processes")
+    sp.set_defaults(fn=cmd_start)
+
+    sp = sub.add_parser("verify", help="functional proof the apps run (needs ferrod + apps)")
+    add_site(sp); sp.add_argument("--apps", help="comma apps (default: all 5)")
+    sp.set_defaults(fn=cmd_verify)
+
+    sp = sub.add_parser("provision-key", help="provision api_key:secret for a user")
+    add_site(sp); sp.add_argument("user", nargs="?", default="Administrator")
+    sp.set_defaults(fn=cmd_provision_key)
+
+    sp = sub.add_parser("list-apps", help="show app registry + installed apps", aliases=["apps"])
+    sp.set_defaults(fn=cmd_list_apps)
+
+    sp = sub.add_parser("version", help="show versions"); sp.set_defaults(fn=cmd_version)
+    sp = sub.add_parser("doctor-json", help=argparse.SUPPRESS); sp.set_defaults(fn=cmd_doctor)
+    return p
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+    if not getattr(args, "cmd", None):
+        parser.print_help()
+        sys.exit(0)
+    args.fn(args)
+
+if __name__ == "__main__":
+    main()

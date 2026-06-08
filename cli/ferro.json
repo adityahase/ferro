@@ -1,0 +1,32 @@
+{
+ "version": "0.1.0",
+ "description": "Ferro — a Rust runtime for the Frappe data plane, with the apps on top, under 64 MB.",
+ "default_apps": ["crm", "helpdesk", "gameplan", "hrms", "erpnext"],
+ "apps": {
+  "crm": {
+   "git": "https://github.com/frappe/crm.git",
+   "branch": "develop",
+   "desc": "Frappe CRM — sales pipeline SPA (frappe-ui frontend)"
+  },
+  "helpdesk": {
+   "git": "https://github.com/frappe/helpdesk.git",
+   "branch": "develop",
+   "desc": "Frappe Helpdesk — ticketing SPA (frappe-ui frontend, ./desk)"
+  },
+  "gameplan": {
+   "git": "https://github.com/frappe/gameplan.git",
+   "branch": "develop",
+   "desc": "Gameplan — team communication SPA (frappe-ui frontend)"
+  },
+  "hrms": {
+   "git": "https://github.com/frappe/hrms.git",
+   "branch": "develop",
+   "desc": "Frappe HR — HR & payroll (frappe-ui frontend; pulls erpnext)"
+  },
+  "erpnext": {
+   "git": "https://github.com/frappe/erpnext.git",
+   "branch": "develop",
+   "desc": "ERPNext — full ERP (Desk UI; 527 doctypes)"
+  }
+ }
+}
