@@ -119,6 +119,19 @@ pub fn dispatch(args: &[String]) -> ! {
         "drop-site" => cmd_drop_site(&g, &rest),
         "db-console" | "sqlite" => cmd_db_console(&g),
         "bypass-patch" => cmd_bypass_patch(&g, &rest),
+        // ---- Wave 4: schema sync + install lifecycle -------------------------------------
+        "reload-doctype" => cmd_reload_doctype(&g, &rest),
+        "reload-doc" => cmd_reload_doc(&g, &rest),
+        "install-app" => cmd_install_app(&g, &rest),
+        "migrate" => cmd_migrate(&g, &rest),
+        "new-site" => cmd_new_site(&g, &rest),
+        "remove-from-installed-apps" => cmd_remove_from_installed_apps(&g, &rest),
+        // ---- Wave 5: db ops + users ------------------------------------------------------
+        "disable-user" => cmd_disable_user(&g, &rest),
+        "describe-database-table" => cmd_describe_table(&g, &rest),
+        "add-database-index" => cmd_add_database_index(&g, &rest),
+        "trim-database" => cmd_trim_database(&g, &rest),
+        "ready-for-migration" => cmd_ready_for_migration(&g),
         // ---- not yet native: delegate to the real Python helper -------------------------
         // fallthrough_to_python diverges (-> !), so this arm never falls through to exit().
         _ => fallthrough_to_python(args),
@@ -509,6 +522,16 @@ fn cmd_list_apps(g: &GlobalOpts, rest: &[String]) -> i32 {
         println!("{s}");
     }
     0
+}
+
+/// Serialize a config Value the Frappe way (1-space indent, sorted keys) — used by install.rs.
+pub(crate) fn write_config_json(v: &Value, out: &mut String) {
+    json_frappe(v, 0, out);
+}
+
+/// installed_apps for use by other modules (install/migrate).
+pub(crate) fn installed_apps_of(con: &Connection) -> Vec<String> {
+    installed_apps(con)
 }
 
 /// installed_apps as stored by Frappe: a JSON list in tabDefaultValue(defkey='installed_apps').
@@ -1151,27 +1174,472 @@ fn cmd_bypass_patch(g: &GlobalOpts, rest: &[String]) -> i32 {
 }
 
 // =====================================================================================
+// Wave 4 — schema sync (reload-doctype / reload-doc)
+// =====================================================================================
+
+fn cmd_reload_doctype(g: &GlobalOpts, rest: &[String]) -> i32 {
+    let doctype = match rest.iter().find(|a| !a.starts_with('-')) {
+        Some(d) => d.clone(),
+        None => {
+            eprintln!("usage: bench --site SITE reload-doctype <DocType>");
+            return 2;
+        }
+    };
+    let sites = match require_sites(g) {
+        Some(s) => s,
+        None => return 1,
+    };
+    let root = bench_root(&sites_dir(g));
+    for site in &sites {
+        let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
+        match crate::schema::reload_doctype(&con, &root, &doctype) {
+            Ok(()) => println!("Reloaded DocType {doctype} for {}", site_name(site)),
+            Err(e) => {
+                eprintln!("reload-doctype ({}): {e}", site_name(site));
+                return 1;
+            }
+        }
+    }
+    0
+}
+
+fn cmd_reload_doc(g: &GlobalOpts, rest: &[String]) -> i32 {
+    // reload-doc <module> <doctype> <docname>. The common case is `reload-doc <m> doctype <name>`,
+    // i.e. reload a DocType definition — identical to reload-doctype <name>.
+    let pos: Vec<&String> = rest.iter().filter(|a| !a.starts_with('-')).collect();
+    if pos.len() < 3 {
+        eprintln!("usage: bench --site SITE reload-doc <module> <doctype> <docname>");
+        return 2;
+    }
+    let (doctype, docname) = (pos[1].as_str(), pos[2].clone());
+    if doctype.eq_ignore_ascii_case("doctype") {
+        return cmd_reload_doctype(g, std::slice::from_ref(&docname));
+    }
+    // reloading a non-DocType record (page/report/workspace/…) — delegate to Python for now.
+    eprintln!("reload-doc for '{doctype}' records is not native yet; delegating.");
+    fallthrough_to_python(&["reload-doc".to_string()]);
+}
+
+fn cmd_install_app(g: &GlobalOpts, rest: &[String]) -> i32 {
+    let apps: Vec<String> = rest.iter().filter(|a| !a.starts_with('-')).cloned().collect();
+    if apps.is_empty() {
+        eprintln!("usage: bench --site SITE install-app APP [APP...] [--force]");
+        return 2;
+    }
+    let force = g.force || rest.iter().any(|a| a == "--force");
+    let sites = match require_sites(g) {
+        Some(s) => s,
+        None => return 1,
+    };
+    let root = bench_root(&sites_dir(g));
+    let mut code = 0;
+    for site in &sites {
+        let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
+        for app in &apps {
+            match crate::install::install_app(&con, site, &root, app, force) {
+                Ok(crate::install::InstallOutcome::Installed(r)) => {
+                    println!(
+                        "Installed {app} on {}: {} doctype(s) synced, {} unchanged",
+                        site_name(site),
+                        r.synced,
+                        r.skipped
+                    );
+                }
+                Ok(crate::install::InstallOutcome::AlreadyInstalled) => {
+                    println!("App {app} already installed on {}", site_name(site));
+                }
+                Ok(crate::install::InstallOutcome::NotFound) => {
+                    eprintln!("App {app} not found under apps/");
+                    code = 1;
+                }
+                Ok(crate::install::InstallOutcome::NeedsPython) => {
+                    println!("App {app} declares install hooks — delegating install to Python");
+                    let c = python_bench_status(&[
+                        "--site".into(),
+                        site_name(site),
+                        "install-app".into(),
+                        app.clone(),
+                    ]);
+                    if c != 0 {
+                        code = c;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("install-app {app} ({}): {e}", site_name(site));
+                    code = 1;
+                }
+            }
+        }
+    }
+    code
+}
+
+fn cmd_migrate(g: &GlobalOpts, rest: &[String]) -> i32 {
+    let native_only = rest.iter().any(|a| a == "--native-only");
+    let sites = match require_sites(g) {
+        Some(s) => s,
+        None => return 1,
+    };
+    let root = bench_root(&sites_dir(g));
+    let mut code = 0;
+    for site in &sites {
+        println!("Migrating {}", site_name(site));
+        let cfg = site.join("site_config.json");
+        update_config_file(&cfg, "maintenance_mode", Some(json!(1))).ok();
+
+        let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
+        match crate::install::migrate_site(&con, &root) {
+            Ok(rep) => {
+                let synced: usize = rep.per_app.iter().map(|(_, r)| r.synced).sum();
+                let skipped: usize = rep.per_app.iter().map(|(_, r)| r.skipped).sum();
+                println!(
+                    "  schema: {synced} doctype(s) synced, {skipped} unchanged across {} app(s)",
+                    rep.per_app.len()
+                );
+                if !rep.python_patches.is_empty() {
+                    if native_only || !have_bench_python() {
+                        println!(
+                            "  {} data patch(es) NOT run (need a Python pass):",
+                            rep.python_patches.len()
+                        );
+                        for p in rep.python_patches.iter().take(10) {
+                            println!("    - {p}");
+                        }
+                    } else {
+                        println!(
+                            "  {} data patch(es) need Python — running `bench migrate` to finish (schema already synced, will be skipped)...",
+                            rep.python_patches.len()
+                        );
+                        // ferro already updated migration_hash, so Python's schema sync is a no-op;
+                        // it just runs the patches + after_migrate hooks.
+                        let c = python_bench_status(&["--site".into(), site_name(site), "migrate".into()]);
+                        if c != 0 {
+                            code = c;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("migrate ({}): {e}", site_name(site));
+                code = 1;
+            }
+        }
+
+        let _ = fs::write(site.join("locks").join("ferro_cache_flush"), crate::util::now_datetime());
+        update_config_file(&cfg, "maintenance_mode", Some(json!(0))).ok();
+        println!();
+    }
+    code
+}
+
+fn cmd_new_site(g: &GlobalOpts, rest: &[String]) -> i32 {
+    let positional: Vec<&String> = rest.iter().filter(|a| !a.starts_with('-')).collect();
+    let site = match positional.first() {
+        Some(s) => (*s).clone(),
+        None => {
+            eprintln!("usage: bench new-site SITE [--admin-password PW] [--db-name NAME] [--set-default] [--force]");
+            return 2;
+        }
+    };
+    let admin_password = opt_value(rest, &["--admin-password"]).unwrap_or_else(|| "admin".to_string());
+    let db_name = opt_value(rest, &["--db-name"]);
+    let set_default = rest.iter().any(|a| a == "--set-default");
+    let force = g.force || rest.iter().any(|a| a == "--force");
+
+    let sd = sites_dir(g);
+    let opts = crate::newsite::NewSiteOpts { admin_password, force, set_default, db_name };
+    match crate::newsite::new_site(&sd, &site, &opts) {
+        Ok(()) => {
+            println!("Site {site} created.");
+            println!("  Administrator password set; site available at sites/{site}");
+            0
+        }
+        Err(e) => {
+            eprintln!("new-site: {e}");
+            1
+        }
+    }
+}
+
+// =====================================================================================
+// Wave 5 — db ops + user management (native)
+// =====================================================================================
+
+fn cmd_disable_user(g: &GlobalOpts, rest: &[String]) -> i32 {
+    let users: Vec<String> = rest.iter().filter(|a| !a.starts_with('-')).cloned().collect();
+    if users.is_empty() {
+        eprintln!("usage: bench --site SITE disable-user USER [USER...]");
+        return 2;
+    }
+    let sites = match require_sites(g) {
+        Some(s) => s,
+        None => return 1,
+    };
+    for site in &sites {
+        let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
+        for user in &users {
+            if user == "Administrator" {
+                eprintln!("refusing to disable Administrator");
+                continue;
+            }
+            match con.execute("UPDATE tabUser SET enabled=0 WHERE name=?1", params![user]) {
+                Ok(1) => println!("Disabled {user} on {}", site_name(site)),
+                Ok(_) => println!("User {user} not found on {}", site_name(site)),
+                Err(e) => {
+                    eprintln!("disable-user: {e}");
+                    return 1;
+                }
+            }
+        }
+    }
+    0
+}
+
+fn cmd_describe_table(g: &GlobalOpts, rest: &[String]) -> i32 {
+    let doctype = match opt_value(rest, &["--doctype"]).or_else(|| rest.iter().find(|a| !a.starts_with('-')).cloned()) {
+        Some(d) => d,
+        None => {
+            eprintln!("usage: bench --site SITE describe-database-table --doctype DOCTYPE");
+            return 2;
+        }
+    };
+    let sites = match require_sites(g) {
+        Some(s) => s,
+        None => return 1,
+    };
+    let table = format!("tab{doctype}");
+    for site in &sites {
+        let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
+        println!("Table: {table}");
+        let mut stmt = match con.prepare(&format!("PRAGMA table_info({})", crate::meta::quote_ident(&table))) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("describe-database-table: {e}");
+                return 1;
+            }
+        };
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?, r.get::<_, Option<String>>(4)?, r.get::<_, i64>(5)?))
+        });
+        if let Ok(rows) = rows {
+            println!("  columns:");
+            for row in rows.flatten() {
+                let (name, ty, notnull, dflt, pk) = row;
+                println!(
+                    "    {name:24} {ty:10}{}{}{}",
+                    if notnull != 0 { " NOT NULL" } else { "" },
+                    dflt.map(|d| format!(" DEFAULT {d}")).unwrap_or_default(),
+                    if pk != 0 { " PRIMARY KEY" } else { "" },
+                );
+            }
+        }
+        let index_stmt = con.prepare(&format!("PRAGMA index_list({})", crate::meta::quote_ident(&table)));
+        if let Ok(mut s2) = index_stmt {
+            if let Ok(rows) = s2.query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, i64>(2)?))) {
+                println!("  indexes:");
+                for (idx, uniq) in rows.flatten() {
+                    println!("    {idx}{}", if uniq != 0 { " (unique)" } else { "" });
+                }
+            }
+        }
+    }
+    0
+}
+
+fn cmd_add_database_index(g: &GlobalOpts, rest: &[String]) -> i32 {
+    let doctype = match opt_value(rest, &["--doctype"]) {
+        Some(d) => d,
+        None => {
+            eprintln!("usage: bench --site SITE add-database-index --doctype DOCTYPE --column col[,col]");
+            return 2;
+        }
+    };
+    let columns = match opt_value(rest, &["--column", "--columns"]) {
+        Some(c) => c,
+        None => {
+            eprintln!("add-database-index: --column required");
+            return 2;
+        }
+    };
+    let cols: Vec<&str> = columns.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let sites = match require_sites(g) {
+        Some(s) => s,
+        None => return 1,
+    };
+    let table = format!("tab{doctype}");
+    let idx_name = format!("{}_index", cols.join("_"));
+    let quoted_cols: Vec<String> = cols.iter().map(|c| crate::meta::quote_ident(c)).collect();
+    for site in &sites {
+        let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
+        let sql = format!(
+            "CREATE INDEX IF NOT EXISTS {idx} ON {tbl} ({cols})",
+            idx = crate::meta::quote_ident(&idx_name),
+            tbl = crate::meta::quote_ident(&table),
+            cols = quoted_cols.join(", "),
+        );
+        match con.execute_batch(&sql) {
+            Ok(()) => println!("Index {idx_name} on {table}({}) ensured for {}", cols.join(", "), site_name(site)),
+            Err(e) => {
+                eprintln!("add-database-index: {e}");
+                return 1;
+            }
+        }
+    }
+    0
+}
+
+fn cmd_trim_database(g: &GlobalOpts, rest: &[String]) -> i32 {
+    // Drop orphan tab<X> tables that have no DocType row. Safe-by-default: lists unless --yes.
+    let apply = rest.iter().any(|a| a == "--yes" || a == "--no-dry-run");
+    // tables we must never drop even though they have no DocType row
+    const KEEP: &[&str] = &["tabSingles", "tabSeries", "tabDeferred Insert", "tabSessions"];
+    let sites = match require_sites(g) {
+        Some(s) => s,
+        None => return 1,
+    };
+    for site in &sites {
+        let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
+        let doctypes: std::collections::HashSet<String> = {
+            let mut set = std::collections::HashSet::new();
+            if let Ok(mut s) = con.prepare("SELECT name FROM \"tabDocType\"") {
+                if let Ok(rows) = s.query_map([], |r| r.get::<_, String>(0)) {
+                    for n in rows.flatten() {
+                        set.insert(format!("tab{n}"));
+                    }
+                }
+            }
+            set
+        };
+        let mut orphans = Vec::new();
+        if let Ok(mut s) = con.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'tab%'") {
+            if let Ok(rows) = s.query_map([], |r| r.get::<_, String>(0)) {
+                for t in rows.flatten() {
+                    if !doctypes.contains(&t) && !KEEP.contains(&t.as_str()) {
+                        orphans.push(t);
+                    }
+                }
+            }
+        }
+        if orphans.is_empty() {
+            println!("trim-database: no orphan tables on {}", site_name(site));
+            continue;
+        }
+        if !apply {
+            println!("trim-database (DRY RUN — pass --yes to drop) — {} orphan table(s) on {}:", orphans.len(), site_name(site));
+            for t in &orphans {
+                println!("  {t}");
+            }
+        } else {
+            for t in &orphans {
+                if let Err(e) = con.execute_batch(&format!("DROP TABLE {}", crate::meta::quote_ident(t))) {
+                    eprintln!("trim-database: failed to drop {t}: {e}");
+                } else {
+                    println!("dropped {t}");
+                }
+            }
+        }
+    }
+    0
+}
+
+fn cmd_remove_from_installed_apps(g: &GlobalOpts, rest: &[String]) -> i32 {
+    let app = match rest.iter().find(|a| !a.starts_with('-')) {
+        Some(a) => a.clone(),
+        None => {
+            eprintln!("usage: bench --site SITE remove-from-installed-apps APP");
+            return 2;
+        }
+    };
+    let sites = match require_sites(g) {
+        Some(s) => s,
+        None => return 1,
+    };
+    for site in &sites {
+        let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
+        let mut apps = installed_apps(&con);
+        let before = apps.len();
+        apps.retain(|a| a != &app);
+        if apps.len() == before {
+            println!("App {app} is not in installed_apps on {}", site_name(site));
+            continue;
+        }
+        let json = serde_json::to_string(&apps).unwrap();
+        con.execute(
+            "UPDATE tabDefaultValue SET defvalue=?1 WHERE defkey='installed_apps' AND parent='__global'",
+            params![json],
+        )
+        .ok();
+        // mirror to site_config
+        let cfg_path = site.join("site_config.json");
+        if let Ok(text) = fs::read_to_string(&cfg_path) {
+            if let Ok(mut cfg) = serde_json::from_str::<Map<String, Value>>(&text) {
+                cfg.insert("installed_apps".to_string(), json!(apps));
+                let mut s = String::new();
+                json_frappe(&Value::Object(cfg), 0, &mut s);
+                let _ = fs::write(&cfg_path, s);
+            }
+        }
+        println!("Removed {app} from installed apps on {} (tables left intact)", site_name(site));
+    }
+    0
+}
+
+fn cmd_ready_for_migration(g: &GlobalOpts) -> i32 {
+    // ferro hosts background jobs in-process inside `ferro serve`; there is no separate durable
+    // queue for a CLI to drain. A ferro deploy gates migrate on the switch/restart, so report ready.
+    let sites = resolve_sites(g);
+    let name = sites.first().map(|s| site_name(s)).unwrap_or_default();
+    println!("READY for migration: site {name} (ferro runs jobs in-process; no external queue)");
+    0
+}
+
+// =====================================================================================
 // fallthrough — anything ferro does not implement natively runs through the real Python helper
 // =====================================================================================
 
 fn fallthrough_to_python(args: &[String]) -> ! {
-    // Find the bench's python: <bench>/env/bin/python relative to the sites dir.
+    eprintln!("ferro bench: '{}' not implemented natively — delegating to Python", args.join(" "));
+    std::process::exit(python_bench_status(args));
+}
+
+/// The bench's python: `<bench>/env/bin/python`, else `python3` on PATH.
+fn bench_python() -> String {
     let sd = if Path::new("sites").is_dir() {
         PathBuf::from("sites")
     } else {
         PathBuf::from(".")
     };
     let py = bench_root(&sd).join("env").join("bin").join("python");
-    let py_path = if py.is_file() { py.to_string_lossy().into_owned() } else { "python3".to_string() };
+    if py.is_file() {
+        py.to_string_lossy().into_owned()
+    } else {
+        "python3".to_string()
+    }
+}
 
-    let mut cmd = Command::new(&py_path);
-    cmd.arg("-m").arg("frappe.utils.bench_helper").arg("frappe").args(args);
-    eprintln!("ferro bench: '{}' not implemented natively — delegating to {py_path}", args.join(" "));
-    match cmd.status() {
-        Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+fn have_bench_python() -> bool {
+    let sd = if Path::new("sites").is_dir() {
+        PathBuf::from("sites")
+    } else {
+        PathBuf::from(".")
+    };
+    bench_root(&sd).join("env").join("bin").join("python").is_file()
+}
+
+/// Run `python -m frappe.utils.bench_helper frappe <args>` and return its exit code (does NOT exit).
+fn python_bench_status(args: &[String]) -> i32 {
+    let py = bench_python();
+    match Command::new(&py)
+        .arg("-m")
+        .arg("frappe.utils.bench_helper")
+        .arg("frappe")
+        .args(args)
+        .status()
+    {
+        Ok(s) => s.code().unwrap_or(1),
         Err(e) => {
-            eprintln!("fallthrough failed: {e}");
-            std::process::exit(127);
+            eprintln!("python delegate failed: {e}");
+            127
         }
     }
 }

@@ -37,6 +37,12 @@ FERRO_SUPPORTED = {
     "clear-cache", "clear-website-cache",
     # backup / restore / teardown
     "backup", "restore", "drop-site", "db-console", "sqlite", "bypass-patch",
+    # schema + install lifecycle
+    "reload-doctype", "reload-doc", "install-app", "migrate", "new-site",
+    "remove-from-installed-apps",
+    # db ops + users
+    "disable-user", "describe-database-table", "add-database-index", "trim-database",
+    "ready-for-migration",
 }
 
 GLOBAL_OPTS_WITH_VALUE = {"--site", "-s", "--sites-path"}
