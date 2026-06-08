@@ -4,3 +4,23 @@
 # Editor / tooling backups and stray artifacts
 *.bak
 POST
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Bulky, regenerable demo/test artifacts (rebuild via the scripts in each dir)
+/demos/pyo3-apps/site/
+/demos/pyo3-apps/_smoke/
+/desk/oracle/
+/desk/baseline/
+
+# Vendored external Frappe app clones — bring-your-own, point FERRO_REPOS at them
+/docs/investigations/apps-64mb/repos/
+
+# Raw measurement dumps; the conclusions live in the *.md findings
+*.smaps
+/docs/investigations/**/raw/
+
+# Deploy secret — generated on the host at deploy time, never committed
+/deploy/signup/control/reap.token
