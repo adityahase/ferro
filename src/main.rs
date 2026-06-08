@@ -21,6 +21,7 @@ mod meta;
 mod naming;
 mod orm;
 mod realtime;
+mod spa;
 mod util;
 
 use auth::AuthOutcome;
@@ -45,6 +46,9 @@ struct App {
     dev: bool,
     /// When set, ferro also serves the Frappe Desk SPA (HTML shell + assets + desk.* methods).
     desk: Option<Arc<desk::Desk>>,
+    /// When set, ferro also serves installed apps' frappe-ui SPAs (crm/gameplan/helpdesk/…) at the
+    /// routes their hooks.py declares — mirroring Frappe's website router.
+    spa: Option<Arc<spa::Spa>>,
     /// The Frappe sitename — the Socket.IO namespace browsers connect to, and the site we emit to.
     sitename: String,
     /// In-process cache (replaces redis_cache).
@@ -146,6 +150,30 @@ fn load_encryption_key(arg: &str) -> Option<String> {
     let text = std::fs::read_to_string(common).ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
     v.get("encryption_key").and_then(|x| x.as_str()).map(|s| s.to_string())
+}
+
+/// The site's `installed_apps` list (arg may be the site dir or the .db file). Used to gate which
+/// apps' SPA routes ferro serves — the forge symlinks *all* apps in via the shared mirror, so the
+/// site config is the source of truth for what's actually installed.
+fn load_installed_apps(arg: &str) -> Vec<String> {
+    let p = Path::new(arg);
+    let site_dir = if p.is_dir() {
+        p.to_path_buf()
+    } else {
+        match p.parent().and_then(|d| d.parent()) {
+            Some(x) => x.to_path_buf(),
+            None => return Vec::new(),
+        }
+    };
+    std::fs::read_to_string(site_dir.join("site_config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| {
+            v.get("installed_apps").and_then(|a| a.as_array()).map(|arr| {
+                arr.iter().filter_map(|x| x.as_str().map(String::from)).collect()
+            })
+        })
+        .unwrap_or_default()
 }
 
 /// Derive `<bench>/sites/assets` from the site-dir-or-db argument. The site lives at
@@ -317,6 +345,7 @@ fn request_cli(args: &[String]) {
         encryption_key: load_encryption_key(path),
         dev,
         desk: None,
+        spa: None,
         // The one-shot `request` CLI never serves realtime/jobs — just exercises the ORM.
         sitename: site_name_from(path),
         cache: Arc::new(cache::Cache::new()),
@@ -513,17 +542,30 @@ fn serve(args: &[String]) {
         default_user = "Administrator".to_string();
     }
 
-    let desk = if enable_desk {
+    let sitename = site_name_from(&path);
+
+    let (desk, spa) = if enable_desk {
         let adir = assets_dir.unwrap_or_else(|| default_assets_dir(&path));
         eprintln!("ferro desk: serving assets from {}", adir.display());
-        Some(Arc::new(desk::Desk::new(adir, desk_boot)))
+        // SPA frontends: serve each installed app's frappe-ui SPA at the routes its hooks.py
+        // declares (the apps/ dir sits two levels up from sites/assets). Installed-app gated so we
+        // don't serve a route for an app that's only symlinked-in via the shared mirror.
+        let spa = adir
+            .parent()
+            .and_then(|sites| sites.parent())
+            .map(|forge| forge.join("apps"))
+            .and_then(|apps_dir| spa::Spa::discover(&apps_dir, &load_installed_apps(&path), &sitename))
+            .map(Arc::new);
+        if let Some(s) = &spa {
+            eprintln!("ferro spa: serving {} app SPA route(s)", s.route_count());
+        }
+        (Some(Arc::new(desk::Desk::new(adir, desk_boot))), spa)
     } else {
-        None
+        (None, None)
     };
 
     // ---- internal backend subsystems (collapse redis_cache/redis_queue/socketio/worker/schedule
     // into this one process). Default ON in bench-mode; individual --no-* flags opt out. ----
-    let sitename = site_name_from(&path);
     let cache = Arc::new(cache::Cache::new());
 
     let backend = bench_mode; // the drop-in scenario is where "one process" matters
@@ -558,6 +600,7 @@ fn serve(args: &[String]) {
         encryption_key,
         dev,
         desk,
+        spa,
         sitename: sitename.clone(),
         cache: cache.clone(),
         realtime: realtime.clone(),
@@ -690,6 +733,14 @@ fn handle(mut req: tiny_http::Request, con: &Connection, app: &App) {
             AuthOutcome::Unauthorized => app.default_user.clone(),
         };
         if let Some(raw) = desk::try_raw(desk, &user, &method, &url) {
+            return respond_raw(req, raw);
+        }
+    }
+
+    // App SPA routes (crm/gameplan/helpdesk/…): serve the frappe-ui shell at the app's own path,
+    // exactly where its hooks.py mounts it. Assets (`/assets/...`) were handled by desk above.
+    if let Some(spa) = &app.spa {
+        if let Some(raw) = spa.try_route(&url) {
             return respond_raw(req, raw);
         }
     }
