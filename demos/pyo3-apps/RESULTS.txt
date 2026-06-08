@@ -1,0 +1,31 @@
+############################################################
+# ferro apps memory matrix  (2026-06-07T08:18:03Z)
+# embedded CPython 3.13.13 + jemalloc(decay0,narenas1) + 256KB cache
+############################################################
+
+== pure-Rust ferro (data plane only, no Python), idle 4 threads ==
+config: threads=4 cap=1024 rounds=1 env=[] pid=373016 idle_rss=7760kB
+
+== ferrod IDLE (post-boot), per-app eager + all eager + all lazy ==
+config                          RSS      PSS      USS
+crm (eager)                    20.3     16.2     15.3
+helpdesk (eager)               20.9     16.7     15.8
+gameplan (eager)               21.7     17.6     16.7
+hrms (eager)                   29.7     25.5     24.6
+erpnext (eager)                42.6     36.6     34.9
+ALL 5 apps (all)               50.4     44.4     42.7
+ALL 5 apps (lazy)              25.6     21.4     20.4
+
+== ferrod UNDER LOAD (peak), all 5 apps, eager vs lazy, by threads ==
+   (reads = 20 rows x ALL columns against populated tables; writes = CRM Deal[+children] + ToDo)
+config                      peakRSS  peakPSS  peakUSS  req/s
+ALL (all, 1T)                  55.2     49.1     47.4    104
+ALL (all, 2T)                  60.4     54.3     52.6     90
+ALL (all, 4T)                  70.3     64.2     62.5    135
+ALL (all, 8T)                  90.6     84.6     82.9    146
+ALL (lazy, 1T)                 30.5     26.3     25.4    101
+ALL (lazy, 2T)                 36.0     31.8     30.8    105
+ALL (lazy, 4T)                 45.8     41.6     40.6    142
+ALL (lazy, 8T)                 65.1     60.9     59.9    148
+
+(64 MB target — compare every number above; under-load = peak during a write-storm)
