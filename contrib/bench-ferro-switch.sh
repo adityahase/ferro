@@ -65,7 +65,14 @@ PY
 
 PORT="${FERRO_PORT:-$(get_cfg webserver_port 8000)}"
 THREADS="${FERRO_THREADS:-$(get_cfg gunicorn_workers 5)}"
+# The all-in-one ferro web command. In --bench-mode ferro also hosts the realtime (socket.io),
+# background workers and scheduler IN-PROCESS, so the socketio/schedule/worker/redis_* Procfile
+# entries are no longer needed — the whole backend collapses to this one line.
 FERRO_WEB_CMD="web: $FERRO_BIN serve --bench-mode -b 127.0.0.1:$PORT --threads $THREADS"
+
+# Procfile entries ferro absorbs (dropped from the collapsed Procfile). `watch` is left alone —
+# it's a frontend asset rebuilder, orthogonal to the runtime.
+ABSORBED_RE='^(web|socketio|schedule|worker|redis_cache|redis_queue|redis_socketio):'
 
 status() {
   local rt; rt="$(get_cfg web_runtime gunicorn)"
@@ -73,43 +80,44 @@ status() {
   echo "web_runtime:  $rt"
   echo "ferro binary: $FERRO_BIN $([[ -x "$FERRO_BIN" ]] && echo '(ok)' || echo '(MISSING - build it)')"
   if [[ -f "$PROCFILE" ]]; then
-    echo "Procfile web: $(grep -E '^web:' "$PROCFILE" | head -1 | sed 's/^web:[[:space:]]*//')"
+    echo "Procfile ($(grep -cE '^[a-zA-Z_]+:' "$PROCFILE") process line(s)):"
+    grep -E '^[a-zA-Z_]+:' "$PROCFILE" | sed 's/^/  /'
   fi
 }
 
 switch_on() {
   [[ -x "$FERRO_BIN" ]] || { echo "error: ferro binary not found/executable at: $FERRO_BIN"; echo "build it: (cd <ferro repo> && cargo build --release --bin ferro)  — or set FERRO_BIN"; exit 1; }
   if [[ -f "$PROCFILE" ]]; then
-    # save the original web: line once, so 'off' restores it exactly
-    if [[ ! -f "$PROCFILE.ferro-orig-web" ]]; then
-      grep -E '^web:' "$PROCFILE" | head -1 > "$PROCFILE.ferro-orig-web" || true
-    fi
-    py - "$PROCFILE" "$FERRO_WEB_CMD" <<'PY'
+    # Back up the ENTIRE original Procfile once, so 'off' restores it byte-for-byte.
+    [[ -f "$PROCFILE.ferro-orig" ]] || cp "$PROCFILE" "$PROCFILE.ferro-orig"
+    # Collapse: replace the web line with the all-in-one ferro command and drop every other line
+    # ferro now hosts internally (socketio/schedule/worker/redis_*). Keep anything else (e.g. watch).
+    py - "$PROCFILE" "$FERRO_WEB_CMD" "$ABSORBED_RE" <<'PY'
 import sys,re
-p,newweb=sys.argv[1],sys.argv[2]
-lines=open(p).read().splitlines()
-out=[]; done=False
+p, newweb, absorbed = sys.argv[1], sys.argv[2], sys.argv[3]
+absorbed_re = re.compile(absorbed)
+lines = open(p).read().splitlines()
+out = [newweb]
 for ln in lines:
-    if re.match(r'^web:', ln) and not done:
-        out.append(newweb); done=True
-    else:
-        out.append(ln)
-if not done: out.insert(0,newweb)
-open(p,"w").write("\n".join(out)+"\n")
+    if absorbed_re.match(ln):
+        continue  # ferro hosts this in-process now
+    out.append(ln)
+open(p, "w").write("\n".join(out) + "\n")
 PY
   fi
   set_runtime ferro
-  echo "switched ON: web runtime -> ferro"
+  echo "switched ON: web runtime -> ferro (backend collapsed into one process)"
   status
   echo
   echo "restart the web process: 'bench restart' (prod) or restart 'bench start' (dev)."
 }
 
 switch_off() {
-  if [[ -f "$PROCFILE" ]]; then
-    local orig="web: bench serve  --port $PORT"
-    [[ -f "$PROCFILE.ferro-orig-web" ]] && orig="$(cat "$PROCFILE.ferro-orig-web")"
-    py - "$PROCFILE" "$orig" <<'PY'
+  if [[ -f "$PROCFILE.ferro-orig" ]]; then
+    mv "$PROCFILE.ferro-orig" "$PROCFILE"
+  elif [[ -f "$PROCFILE" ]]; then
+    # No backup (already off, or first run) — best-effort restore of a stock web line.
+    py - "$PROCFILE" "web: bench serve  --port $PORT" <<'PY'
 import sys,re
 p,origweb=sys.argv[1],sys.argv[2]
 lines=open(p).read().splitlines()
@@ -119,29 +127,35 @@ for ln in lines:
         out.append(origweb); done=True
     else:
         out.append(ln)
+if not done: out.insert(0,origweb)
 open(p,"w").write("\n".join(out)+"\n")
 PY
-    rm -f "$PROCFILE.ferro-orig-web"
   fi
+  # also drop the stale per-line backup from older versions of this script
+  rm -f "$PROCFILE.ferro-orig-web"
   set_runtime gunicorn
-  echo "switched OFF: web runtime -> gunicorn (bench serve)"
+  echo "switched OFF: web runtime -> gunicorn (bench serve); original Procfile restored"
   status
 }
 
 prod_patch() {
   cat <<EOF
 # ---- Production switch (supervisor / systemd) ----
-# Add to bench/config/supervisor.py (or your supervisor.conf template) and systemd unit, gated on
-# the common_site_config "web_runtime" flag. Replace ONLY the web program command:
+# Gate the program set on the common_site_config "web_runtime" flag. When ferro is on, the web
+# program becomes the all-in-one command AND the socketio / worker / schedule / redis_* programs
+# are dropped — ferro hosts realtime, background jobs and the scheduler in the same process.
 #
 #   {% if web_runtime == 'ferro' %}
+#   # one program; realtime(socket.io)+workers+scheduler are in-process. No redis-server needed.
 #   command=$FERRO_BIN serve --bench-mode --site {{ default_site }} -b 127.0.0.1:{{ webserver_port }} --threads {{ gunicorn_workers }}
+#   # (omit the [program:...-socketio], [...-worker], [...-schedule] and the redis_* programs)
 #   {% else %}
 #   command={{ bench_dir }}/env/bin/gunicorn ... frappe.app:application --preload   # (existing line)
+#   # (plus the existing socketio / worker / schedule / redis programs)
 #   {% endif %}
 #
 # Then: bench setup supervisor   (or: bench setup production) && bench restart
-# Flip back: set web_runtime=gunicorn and re-run the same. nginx, socketio, workers untouched.
+# Flip back: set web_runtime=gunicorn and re-run the same. nginx is untouched either way.
 EOF
 }
 

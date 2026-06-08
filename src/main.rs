@@ -13,11 +13,14 @@
 //! `gunicorn frappe.app:application` web process and reads sites/ exactly like `bench serve`.
 
 mod auth;
+mod cache;
 mod crypto;
 mod desk;
+mod jobs;
 mod meta;
 mod naming;
 mod orm;
+mod realtime;
 mod util;
 
 use auth::AuthOutcome;
@@ -42,6 +45,37 @@ struct App {
     dev: bool,
     /// When set, ferro also serves the Frappe Desk SPA (HTML shell + assets + desk.* methods).
     desk: Option<Arc<desk::Desk>>,
+    /// The Frappe sitename — the Socket.IO namespace browsers connect to, and the site we emit to.
+    sitename: String,
+    /// In-process cache (replaces redis_cache).
+    cache: Arc<cache::Cache>,
+    /// In-process realtime hub (replaces the Node socketio + redis_socketio). None if disabled.
+    realtime: Option<Arc<realtime::Realtime>>,
+    /// In-process background-job queue (replaces the rq worker + redis_queue). None if disabled.
+    jobs: Option<Arc<jobs::JobQueue>>,
+}
+
+/// Publish the same realtime events Frappe's `Document.notify_update` does, so the Desk's open
+/// forms and list views refresh live — but in-process, with no redis hop.
+fn notify_write(app: &App, doctype: &str, name: &str, user: &str, modified: &str) {
+    let rt = match &app.realtime {
+        Some(rt) => rt,
+        None => return,
+    };
+    // doc_update -> the document's room (forms subscribe via doc_subscribe)
+    rt.emit(
+        &app.sitename,
+        &format!("doc:{}/{}", doctype, name),
+        "doc_update",
+        &json!({"modified": modified, "doctype": doctype, "name": name}),
+    );
+    // list_update -> the site room "all" (every System User joins it on connect)
+    rt.emit(
+        &app.sitename,
+        "all",
+        "list_update",
+        &json!({"doctype": doctype, "name": name, "user": user}),
+    );
 }
 
 fn main() {
@@ -186,6 +220,33 @@ fn resolve_bench_site(sites_path: Option<&str>, site: Option<&str>) -> Option<(S
     Some((site_dir.to_string_lossy().into_owned(), webserver_port))
 }
 
+/// The Frappe sitename (= the Socket.IO namespace browsers connect to) from a site-dir-or-db arg.
+fn site_name_from(path: &str) -> String {
+    let p = Path::new(path);
+    let dir = if p.is_dir() {
+        p.to_path_buf()
+    } else if p.extension().map(|e| e == "db").unwrap_or(false) {
+        // <site>/db/<name>.db -> the site dir is the grandparent
+        p.parent().and_then(|d| d.parent()).map(|x| x.to_path_buf()).unwrap_or_else(|| p.to_path_buf())
+    } else {
+        p.to_path_buf()
+    };
+    dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// Read a numeric key from the bench-wide common_site_config.json next to the site.
+fn read_common_cfg_u64(site_path: &str, key: &str) -> Option<u64> {
+    let p = Path::new(site_path);
+    let sites = if p.is_dir() {
+        p.parent()
+    } else {
+        p.parent().and_then(|d| d.parent())
+    }?;
+    let text = std::fs::read_to_string(sites.join("common_site_config.json")).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    v.get(key).and_then(|x| x.as_u64())
+}
+
 fn open_conn(db_path: &str) -> Connection {
     let con = Connection::open(db_path).expect("open sqlite");
     con.busy_timeout(std::time::Duration::from_secs(5)).ok();
@@ -256,6 +317,11 @@ fn request_cli(args: &[String]) {
         encryption_key: load_encryption_key(path),
         dev,
         desk: None,
+        // The one-shot `request` CLI never serves realtime/jobs — just exercises the ORM.
+        sitename: site_name_from(path),
+        cache: Arc::new(cache::Cache::new()),
+        realtime: None,
+        jobs: None,
     };
     let auth_header = token.map(|t| format!("token {t}"));
     // Infer content-type from the body shape so the CLI can exercise both JSON and form bodies.
@@ -290,6 +356,12 @@ fn serve(args: &[String]) {
     let mut sites_path_opt: Option<String> = None;
     let mut assets_dir: Option<PathBuf> = None;
     let mut desk_boot: Option<PathBuf> = None;
+    // Internal backend subsystems (the Procfile collapse). All default ON in bench-mode.
+    let mut no_realtime = false;
+    let mut no_workers = false;
+    let mut no_scheduler = false;
+    let mut socketio_port: Option<u16> = None;
+    let mut worker_count: Option<usize> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -362,6 +434,34 @@ fn serve(args: &[String]) {
                 desk_boot = args.get(i + 1).map(PathBuf::from);
                 i += 2;
             }
+            // ---- internal backend subsystems (collapse redis/socketio/worker/schedule) ----
+            "--no-realtime" => {
+                no_realtime = true;
+                i += 1;
+            }
+            "--no-workers" => {
+                no_workers = true;
+                i += 1;
+            }
+            "--no-scheduler" => {
+                no_scheduler = true;
+                i += 1;
+            }
+            "--no-backend" => {
+                // turn off ALL internal subsystems (pure web runtime, like the original ferro)
+                no_realtime = true;
+                no_workers = true;
+                no_scheduler = true;
+                i += 1;
+            }
+            "--socketio-port" => {
+                socketio_port = args.get(i + 1).and_then(|s| s.parse().ok());
+                i += 2;
+            }
+            "--workers" => {
+                worker_count = args.get(i + 1).and_then(|s| s.parse().ok());
+                i += 2;
+            }
             other => {
                 // First bare (non-flag) token is the optional positional site path.
                 if !other.starts_with('-') && positional.is_none() {
@@ -421,24 +521,99 @@ fn serve(args: &[String]) {
         None
     };
 
+    // ---- internal backend subsystems (collapse redis_cache/redis_queue/socketio/worker/schedule
+    // into this one process). Default ON in bench-mode; individual --no-* flags opt out. ----
+    let sitename = site_name_from(&path);
+    let cache = Arc::new(cache::Cache::new());
+
+    let backend = bench_mode; // the drop-in scenario is where "one process" matters
+    let want_realtime = backend && !no_realtime;
+    let want_workers = backend && !no_workers;
+    let want_scheduler = backend && !no_scheduler;
+
+    // Realtime hub: resolve the connecting user from ferro's default desk identity. (ferro's Desk
+    // runs every request as `default_user`; the realtime side mirrors that.)
+    let realtime = if want_realtime {
+        let du = default_user.clone();
+        let resolver: realtime::AuthResolver = Arc::new(move |_site, _cookie, _auth| {
+            let user_type = if du == "Guest" { "Guest" } else { "System User" };
+            (du.clone(), user_type.to_string())
+        });
+        Some(realtime::Realtime::new(resolver))
+    } else {
+        None
+    };
+
+    let jobs = if want_workers {
+        let q = jobs::JobQueue::new();
+        jobs::register_builtins(&q);
+        Some(q)
+    } else {
+        None
+    };
+
     let app = Arc::new(App {
         metas: MetaCache::new(meta_cap),
         default_user,
         encryption_key,
         dev,
         desk,
+        sitename: sitename.clone(),
+        cache: cache.clone(),
+        realtime: realtime.clone(),
+        jobs: jobs.clone(),
     });
+
+    // Launch realtime listener (socket.io on socketio_port, default 9000).
+    if let Some(rt) = &realtime {
+        let sio_port = socketio_port
+            .or_else(|| read_common_cfg_u64(&path, "socketio_port").map(|p| p as u16))
+            .unwrap_or(9000);
+        let sio_addr = format!("{bind_host}:{sio_port}");
+        match realtime::serve(rt.clone(), &sio_addr) {
+            Ok(_) => {}
+            Err(e) => eprintln!("ferro realtime: could not bind {sio_addr}: {e} (realtime disabled)"),
+        }
+    }
+
+    // Launch worker pool + scheduler, sharing the cache and realtime hub so jobs can push events.
+    if let Some(q) = &jobs {
+        let rt_for_jobs = realtime.clone().unwrap_or_else(|| {
+            // jobs need a realtime handle for progress; if realtime is off, use a detached hub.
+            let resolver: realtime::AuthResolver =
+                Arc::new(|_s, _c, _a| ("Administrator".to_string(), "System User".to_string()));
+            realtime::Realtime::new(resolver)
+        });
+        let ctx = Arc::new(jobs::JobContext { cache: cache.clone(), realtime: rt_for_jobs, queue: q.clone() });
+        let nworkers = worker_count
+            .or_else(|| read_common_cfg_u64(&path, "background_workers").map(|n| n as usize))
+            .unwrap_or(1)
+            .max(1);
+        jobs::start_workers(q.clone(), ctx, nworkers);
+        eprintln!("ferro workers: {nworkers} background worker(s) running");
+
+        if want_scheduler {
+            let sched = jobs::Scheduler::new(q.clone(), &sitename);
+            // The maintenance jobs Frappe's scheduler enqueues; ferro fires them on the same cadence.
+            sched.every(jobs::Every::all(), "frappe.utils.scheduler.enqueue_events", "default");
+            sched.every(jobs::Every::hourly(), "frappe.sessions.clear_expired_sessions", "default");
+            jobs::start_scheduler(sched);
+        }
+    }
 
     let addr = format!("{bind_host}:{port}");
     let server = Arc::new(Server::http(&addr).expect("bind"));
     eprintln!(
-        "ferro serving {} on http://{} ({} threads, default-user={}, fernet={}, desk={})",
+        "ferro serving {} on http://{} ({} threads, site={}, default-user={}, fernet={}, desk={}, realtime={}, workers={})",
         db_path,
         addr,
         threads,
+        app.sitename,
         app.default_user,
         app.encryption_key.is_some(),
         app.desk.is_some(),
+        app.realtime.is_some(),
+        app.jobs.is_some(),
     );
 
     let mut handles = Vec::new();
@@ -628,6 +803,10 @@ fn route(
     match segments.get(1).map(|s| s.as_str()) {
         Some("method") => {
             let mname = segments.get(2).map(|s| s.as_str()).unwrap_or("");
+            // ferro's own introspection / job-control methods for the internal backend subsystems.
+            if let Some(r) = ferro_method(app, &ident, mname, &params) {
+                return r;
+            }
             // Desk's frappe.* whitelisted methods (list/form/boot), mapped onto ferro's ORM.
             if app.desk.is_some() {
                 if let Some(r) = desk::route_method(con, &app.metas, &ident.user, mname, &params, body, content_type, method) {
@@ -638,6 +817,63 @@ fn route(
         }
         Some("resource") => route_resource(con, app, &ident, method, &segments, &params, body, content_type),
         _ => err(app.dev, 404, "NotFound", format!("Unknown path /{}", segments.join("/"))),
+    }
+}
+
+/// ferro-native methods for observing and driving the internal backend subsystems (cache, jobs,
+/// realtime, scheduler). Returns None if `mname` isn't one of ours, so the caller falls through to
+/// the normal Frappe method routing. `ferro.enqueue` is gated to Administrator.
+fn ferro_method(
+    app: &App,
+    ident: &auth::Identity,
+    mname: &str,
+    params: &HashMap<String, String>,
+) -> Option<(u16, Value)> {
+    match mname {
+        "ferro.status" => {
+            let heartbeat = app
+                .cache
+                .get_str("scheduler:last_heartbeat")
+                .unwrap_or_else(|| "never".into());
+            Some((
+                200,
+                json!({"message": {
+                    "runtime": "ferro",
+                    "site": app.sitename,
+                    "realtime": app.realtime.is_some(),
+                    "realtime_connected": app.realtime.as_ref().map(|r| r.connected_count()).unwrap_or(0),
+                    "workers": app.jobs.is_some(),
+                    "jobs_pending": app.jobs.as_ref().map(|j| j.pending()).unwrap_or(0),
+                    "job_methods": app.jobs.as_ref().map(|j| j.registered_methods()).unwrap_or_default(),
+                    "cache_keys": app.cache.len(),
+                    "scheduler_last_heartbeat": heartbeat,
+                }}),
+            ))
+        }
+        "ferro.enqueue" => {
+            if ident.user != "Administrator" {
+                return Some(err(app.dev, 403, "PermissionError", "ferro.enqueue requires Administrator".into()));
+            }
+            let jobs = app.jobs.as_ref()?;
+            let method = params.get("method").cloned().unwrap_or_else(|| "ferro.ping".into());
+            let queue = params.get("queue").cloned().unwrap_or_else(|| "default".into());
+            let kwargs = params
+                .get("kwargs")
+                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                .unwrap_or_else(|| json!({}));
+            let id = jobs.enqueue(&method, kwargs, &queue, &app.sitename);
+            Some((200, json!({"message": {"job_id": id, "method": method, "queue": queue}})))
+        }
+        "ferro.job_status" => {
+            let jobs = app.jobs.as_ref()?;
+            let id = params.get("id").cloned().unwrap_or_default();
+            let status = jobs.status(&id).map(|s| format!("{:?}", s)).unwrap_or_else(|| "unknown".into());
+            Some((
+                200,
+                json!({"message": {"id": id, "status": status, "result": jobs.result(&id), "error": jobs.error(&id)}}),
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -728,7 +964,12 @@ fn route_resource(
                 Err(e) => return err(dev, 417, "ValidationError", e),
             };
             match orm::insert(con, &meta, &acl, &data, &ident.user) {
-                Ok(doc) => (200, json!({ "data": doc })),
+                Ok(doc) => {
+                    let name = doc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let modified = doc.get("modified").and_then(|v| v.as_str()).unwrap_or("");
+                    notify_write(app, &meta.name, name, &ident.user, modified);
+                    (200, json!({ "data": doc }))
+                }
                 Err(e) => map_orm_err(dev, e),
             }
         }
@@ -741,7 +982,11 @@ fn route_resource(
                 Err(e) => return err(dev, 417, "ValidationError", e),
             };
             match orm::update(con, &meta, &acl, &n, &data, &ident.user) {
-                Ok(doc) => (200, json!({ "data": doc })),
+                Ok(doc) => {
+                    let modified = doc.get("modified").and_then(|v| v.as_str()).unwrap_or("");
+                    notify_write(app, &meta.name, &n, &ident.user, modified);
+                    (200, json!({ "data": doc }))
+                }
                 Err(e) => map_orm_err(dev, e),
             }
         }
@@ -750,7 +995,10 @@ fn route_resource(
                 return err(dev, 403, "PermissionError", format!("No permission for {} {n}", meta.name));
             }
             match orm::delete(con, &meta, &n) {
-                Ok(()) => (202, json!({ "data": "ok" })),
+                Ok(()) => {
+                    notify_write(app, &meta.name, &n, &ident.user, "");
+                    (202, json!({ "data": "ok" }))
+                }
                 Err(e) => map_orm_err(dev, e),
             }
         }

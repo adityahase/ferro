@@ -6,10 +6,13 @@
 //! (`pyrt`, `pydoc`, `hooks`) to run real Frappe app controllers on top.
 
 pub mod auth;
+pub mod cache;
 pub mod crypto;
+pub mod jobs;
 pub mod meta;
 pub mod naming;
 pub mod orm;
+pub mod realtime;
 pub mod util;
 
 // Embedded-Python layer (only compiled for ferrod, which links libpython).
