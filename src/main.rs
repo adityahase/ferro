@@ -24,6 +24,13 @@ mod orm;
 mod realtime;
 mod spa;
 mod util;
+// The embedded-Python fallthrough (web_runtime=ferrod tier). Compiled only with --features python;
+// `pyrt` is the same ferro_rt callback module the `ferrod` binary uses, compiled into this binary.
+#[cfg(feature = "python")]
+#[path = "pyrt.rs"]
+mod pyrt;
+#[cfg(feature = "python")]
+mod pyfall;
 
 use auth::AuthOutcome;
 use meta::MetaCache;
@@ -36,12 +43,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 use tiny_http::{Header, Method, Response, Server};
+// brings the native module's init symbol into scope for append_to_inittab!
+#[cfg(feature = "python")]
+use pyrt::ferro_rt;
 
 /// Maximum request body we will read (DoS guard). 413 above this.
 const MAX_BODY: u64 = 8 * 1024 * 1024;
 
 struct App {
-    metas: MetaCache,
+    metas: Arc<MetaCache>,
     default_user: String,
     encryption_key: Option<String>,
     dev: bool,
@@ -50,6 +60,10 @@ struct App {
     /// When set, ferro also serves installed apps' frappe-ui SPAs (crm/gameplan/helpdesk/…) at the
     /// routes their hooks.py declares — mirroring Frappe's website router.
     spa: Option<Arc<spa::Spa>>,
+    /// When set (web_runtime=ferrod + built --features python), installed apps' whitelisted
+    /// `/api/method/<app>.*` calls route into embedded CPython running their real code.
+    #[cfg(feature = "python")]
+    pyfall: Option<Arc<pyfall::PyFall>>,
     /// The Frappe sitename — the Socket.IO namespace browsers connect to, and the site we emit to.
     sitename: String,
     /// In-process cache (replaces redis_cache).
@@ -84,6 +98,10 @@ fn notify_write(app: &App, doctype: &str, name: &str, user: &str, modified: &str
 }
 
 fn main() {
+    // Register the native `ferro_rt` module before the interpreter can initialise (no-op for the
+    // non-python build / the request/bench paths that never start CPython).
+    #[cfg(feature = "python")]
+    pyo3::append_to_inittab!(ferro_rt);
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(|s| s.as_str()) {
         Some("serve") => serve(&args[2..]),
@@ -176,6 +194,27 @@ fn load_installed_apps(arg: &str) -> Vec<String> {
             })
         })
         .unwrap_or_default()
+}
+
+/// The site's `web_runtime` ("ferro" | "ferrod" | …), site_config winning over common_site_config.
+/// "ferrod" turns on the embedded-Python method tier (when this binary has the python feature).
+fn load_web_runtime(arg: &str) -> String {
+    let p = Path::new(arg);
+    let site_dir = if p.is_dir() {
+        p.to_path_buf()
+    } else {
+        match p.parent().and_then(|d| d.parent()) {
+            Some(x) => x.to_path_buf(),
+            None => return "ferro".to_string(),
+        }
+    };
+    let read = |path: PathBuf| -> Option<String> {
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+        v.get("web_runtime").and_then(|x| x.as_str()).map(String::from)
+    };
+    read(site_dir.join("site_config.json"))
+        .or_else(|| site_dir.parent().and_then(|sites| read(sites.join("common_site_config.json"))))
+        .unwrap_or_else(|| "ferro".to_string())
 }
 
 /// Derive `<bench>/sites/assets` from the site-dir-or-db argument. The site lives at
@@ -342,12 +381,14 @@ fn request_cli(args: &[String]) {
     }
     let con = open_conn(&resolve_db_path(path));
     let app = App {
-        metas: MetaCache::new(512),
+        metas: Arc::new(MetaCache::new(512)),
         default_user,
         encryption_key: load_encryption_key(path),
         dev,
         desk: None,
         spa: None,
+        #[cfg(feature = "python")]
+        pyfall: None,
         // The one-shot `request` CLI never serves realtime/jobs — just exercises the ORM.
         sitename: site_name_from(path),
         cache: Arc::new(cache::Cache::new()),
@@ -596,13 +637,46 @@ fn serve(args: &[String]) {
         None
     };
 
+    let metas = Arc::new(MetaCache::new(meta_cap));
+
+    // Python fallthrough tier. When the site's web_runtime is "ferrod" (and this is the --features
+    // python build), boot one embedded interpreter, load the installed apps, and map their
+    // whitelisted methods so /api/method/<app>.* runs real controller code. Everything else (Desk,
+    // SPAs, reads, pure-CRUD writes) stays on the no-GIL Rust path. The map is shared via `metas`.
+    let web_runtime = load_web_runtime(&path);
+    #[cfg(feature = "python")]
+    let pyfall = if web_runtime == "ferrod" {
+        let apps: Vec<String> = load_installed_apps(&path).into_iter().filter(|a| a != "frappe").collect();
+        match pyfall::PyFall::boot(&db_path, metas.clone(), &apps) {
+            Ok(pf) => {
+                eprintln!("ferro: web_runtime=ferrod — {} app method(s) routed to Python", pf.count());
+                Some(Arc::new(pf))
+            }
+            Err(e) => {
+                eprintln!("ferro: web_runtime=ferrod but interpreter boot failed: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(not(feature = "python"))]
+    if web_runtime == "ferrod" {
+        eprintln!(
+            "ferro: web_runtime=ferrod but this binary was built without --features python — \
+             app /api/method/* will 404; use the python-enabled build for the ferrod tier"
+        );
+    }
+
     let app = Arc::new(App {
-        metas: MetaCache::new(meta_cap),
+        metas,
         default_user,
         encryption_key,
         dev,
         desk,
         spa,
+        #[cfg(feature = "python")]
+        pyfall,
         sitename: sitename.clone(),
         cache: cache.clone(),
         realtime: realtime.clone(),
@@ -864,6 +938,14 @@ fn route(
             if app.desk.is_some() {
                 if let Some(r) = desk::route_method(con, &app.metas, &ident.user, mname, &params, body, content_type, method) {
                     return r;
+                }
+            }
+            // web_runtime=ferrod tier: installed apps' whitelisted methods run their real Python.
+            #[cfg(feature = "python")]
+            if let Some(pf) = &app.pyfall {
+                if pf.has(mname) {
+                    let args = pyfall::args_json(&params, body);
+                    return pf.call(con, app.dev, mname, &args, &ident.user);
                 }
             }
             route_method(app, &ident, &segments)

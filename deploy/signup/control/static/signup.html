@@ -189,6 +189,7 @@
       <div class="ok-url" id="d-url"></div>
       <p class="sub" style="margin:6px auto 18px">Sign in is automatic (Administrator). Browse your
         workspaces, open any doctype's list &amp; form, create records — the real Desk UI, served in Rust.</p>
+      <div class="row" id="d-apps" style="justify-content:center;flex-wrap:wrap;margin-bottom:10px"></div>
       <div class="row" style="justify-content:center;margin-bottom:18px">
         <a class="btn" id="d-open" target="_blank">Open Frappe Desk ↗</a>
         <button class="btn ghost" id="d-another">Create another</button>
@@ -293,11 +294,19 @@ async function poll(sub,host){
   }catch(e){}
   setTimeout(()=>poll(sub,host),1000);
 }
+// SPA apps open at their own route (served live by the ferrod runtime tier), not inside Desk.
+const APP_ROUTES={crm:'/crm',gameplan:'/g',helpdesk:'/helpdesk'};
+const APP_LABELS={crm:'CRM',gameplan:'Gameplan',helpdesk:'Helpdesk'};
 function success(host){
   $('#progress').classList.add('hide');
   $('#done').classList.remove('hide');
   $('#d-url').textContent=host;
-  $('#d-open').href='https://'+host+'/app';          // straight into Desk
+  $('#d-open').href='https://'+host+'/app';          // Desk (workspaces / any doctype)
+  // Deep links for the SPA apps the user installed — their real frontend, backed by live Python.
+  const spa=[...SELECTED].filter(a=>APP_ROUTES[a]);
+  $('#d-apps').innerHTML = spa.map(a=>
+    `<a class="btn" target="_blank" href="https://${host}${APP_ROUTES[a]}">Open ${APP_LABELS[a]} ↗</a>`).join('');
+  if(spa.length){ $('#d-open').className='btn ghost'; }   // an app is the primary CTA; Desk secondary
   $('#d-curl').textContent=
     `# Desk lives at https://${host}/app  —  it also speaks the Frappe REST API:\ncurl 'https://${host}/api/resource/DocType?limit_page_length=5'`;
   $('#d-another').onclick=()=>location.reload();

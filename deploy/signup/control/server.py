@@ -134,6 +134,14 @@ DESK_DESC = {
     "gameplan": "Team communication — projects, discussions & pages as Desk doctypes.",
 }
 
+# Apps whose real UI is a frappe-ui SPA on its own route (not Desk workspaces). Installing one flips
+# the tenant to the "ferrod" runtime tier, where ferro embeds CPython and auto-routes that app's
+# whitelisted /api/method/<app>.* calls into real controller Python — so the SPA actually works.
+SPA_APPS = {"crm", "gameplan", "helpdesk"}
+# Each SPA app's entry route (its hooks.py website_route_rules base), for post-signup deep links.
+APP_ROUTES = {"crm": "/crm", "gameplan": "/g", "helpdesk": "/helpdesk"}
+
+
 def _count_jsons(appdir, segment):
     n = 0
     seg = os.sep + segment + os.sep
@@ -366,6 +374,19 @@ def import_workspaces(forge, host, apps):
     rc, _out = sh(cmd, timeout=120)
     return rc == 0
 
+def set_site_config(forge, host, **keys):
+    """Merge keys into the tenant's site_config.json (best-effort)."""
+    cfgp = os.path.join(forge, "sites", host, "site_config.json")
+    try:
+        cfg = load_json(cfgp, {})
+        cfg.update(keys)
+        with open(cfgp, "w") as f:
+            json.dump(cfg, f, indent=1)
+        return True
+    except OSError:
+        return False
+
+
 def _step(job, name, detail=""):
     s = {"name": name, "status": "running", "detail": detail}
     job["steps"].append(s)
@@ -432,6 +453,16 @@ def provision(sub, apps):
             else:
                 _ok(s, "core Desk workspaces ready")
 
+            # SPA apps (crm/gameplan/helpdesk) need their real Python API. Flip the tenant to the
+            # ferrod runtime tier so /api/method/<app>.* runs real controllers; the launcher uses the
+            # python-enabled ferro (and falls back to pure-Rust if it isn't staged).
+            if set(apps) & SPA_APPS:
+                s = _step(job, "runtime", "enabling real app methods")
+                if set_site_config(forge, host, web_runtime="ferrod"):
+                    _ok(s, "ferrod tier (live app APIs)")
+                else:
+                    _ok(s, "default runtime")
+
             s = _step(job, "data", "adding demo rows")
             ferro(["populate", "--site", host, "--rows", str(POPULATE_ROWS)],
                   env=env, cwd=forge, timeout=120)  # best-effort
@@ -455,6 +486,8 @@ def provision(sub, apps):
         job["url"] = f"https://{host}/app"          # land straight in Desk
         job["api"] = f"https://{host}/api/resource/DocType"
         job["desk"] = DESK_ENABLED
+        # Per-app deep links for the success screen (only the installed SPA apps).
+        job["app_routes"] = {a: APP_ROUTES[a] for a in apps if a in APP_ROUTES}
     except Exception as e:  # noqa: BLE001
         job["status"] = "error"
         job["error"] = str(e)

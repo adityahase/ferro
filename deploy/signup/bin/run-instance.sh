@@ -27,12 +27,12 @@ THREADS="${FERRO_THREADS:-4}"
 SITE_DIR="$forge/sites/$SITE"
 
 # Runtime tier (web_runtime, read from the tenant's config — same flag bench-ferro-switch.sh sets):
-#   "ferro"  (default) — pure-Rust: Desk + app SPAs + REST, ~15-25 MB, app *.api.* methods 404.
-#   "ferrod"           — ferro + embedded CPython: auto-routes installed apps' whitelisted methods
-#                        into their REAL Python (map built on worker start). ~46-63 MB.
-# PROTOTYPE CAVEAT: ferrod currently serves the data/method plane only — it does NOT serve the Desk
-# or SPA HTML shells/assets. Use it where the API fidelity is what matters; folding the Python
-# fallthrough into the full (desk+spa) ferro server is the production follow-up.
+#   "ferro"  (default) — pure-Rust: Desk + app SPAs + REST, ~15-25 MB. App *.api.* methods 404.
+#   "ferrod"           — the SAME ferro binary built with embedded CPython: on top of Desk + SPA +
+#                        REST it also auto-routes installed apps' whitelisted methods into their REAL
+#                        Python (map built on worker start). ~46-63 MB. ferro reads web_runtime
+#                        itself and only boots the interpreter for "ferrod" — here we just point at
+#                        the python-enabled build and put libpython + the shim/app sources on its env.
 WEB_RUNTIME="$(python3 - "$SITE_DIR" <<'PY'
 import json, os, sys
 sd = sys.argv[1]
@@ -47,16 +47,18 @@ PY
 )"
 
 if [ "$WEB_RUNTIME" = "ferrod" ]; then
-  FERROD_BIN="${FERRO_FERROD_BIN:-/opt/ferro/runtime/ferrod}"
-  [ -x "$FERROD_BIN" ] || { echo "web_runtime=ferrod but no ferrod binary at $FERROD_BIN" >&2; exit 1; }
-  # embedded CPython needs its libpython on the loader path + the shim/app sources discoverable
-  export LD_LIBRARY_PATH="${FERRO_PYLIB:-/opt/ferro/python/lib}:${LD_LIBRARY_PATH:-}"
-  export FERRO_SHIM="${FERRO_SHIM:-/opt/ferro/stack/framework/shim}"
-  export FERRO_REPOS="${FERRO_REPOS:-/opt/ferro/app-mirror}"
-  echo "WARN: web_runtime=ferrod — serving REST + app whitelisted methods (no Desk/SPA shell yet)" >&2
-  exec "$FERROD_BIN" serve "$SITE_DIR" \
-    --port "$PORT" --threads "$THREADS" \
-    --apps "${APPS:-}" --load all --user Administrator
+  PY_BIN="${FERRO_RUNTIME_PY_BIN:-/opt/ferro/runtime/ferro-py}"
+  if [ -x "$PY_BIN" ]; then
+    RUNTIME_BIN="$PY_BIN"
+    # embedded CPython needs its libpython on the loader path + the shim/app sources discoverable
+    export LD_LIBRARY_PATH="${FERRO_PYLIB:-/opt/ferro/python/lib}:${LD_LIBRARY_PATH:-}"
+    export FERRO_SHIM="${FERRO_SHIM:-/opt/ferro/stack/framework/shim}"
+    export FERRO_REPOS="${FERRO_REPOS:-/opt/ferro/app-mirror}"
+  else
+    # No python-enabled build staged yet: don't hard-fail — serve the pure-Rust tier (Desk + SPA
+    # shells load; app *.api.* methods 404 until ferro-py is deployed).
+    echo "WARN: web_runtime=ferrod but no python-enabled ferro at $PY_BIN — falling back to pure-Rust ferro (app methods will 404)" >&2
+  fi
 fi
 
 desk_args=()
