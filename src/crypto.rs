@@ -579,4 +579,25 @@ mod tests {
         let pt = fernet_decrypt(key, token).expect("decrypt");
         assert_eq!(pt, b"my-super-secret-api-secret-1234567890");
     }
+
+    #[test]
+    fn passlib_pbkdf2_vector() {
+        // Vector produced by Frappe's passlib: pbkdf2_sha256.hash("test123")
+        let known = "$pbkdf2-sha256$29000$gDAmhFDqfe/93zsnBOCcMw$cwC8bblvvi7z5hK2Poi0f0tlfs6aB597a7EKTgr1gm4";
+        // 1) we can verify a hash passlib produced.
+        assert!(passlib_pbkdf2_sha256_verify("test123", known));
+        assert!(!passlib_pbkdf2_sha256_verify("wrong", known));
+
+        // 2) given passlib's own salt, we reconstruct the exact modular-crypt string byte-for-byte
+        //    — proving Frappe's passlib will verify any hash ferro sets.
+        let salt = ab64_decode("gDAmhFDqfe/93zsnBOCcMw").unwrap();
+        assert_eq!(salt.len(), 16);
+        let rebuilt = passlib_pbkdf2_sha256_with("test123", &salt, 29000);
+        assert_eq!(rebuilt, known);
+
+        // 3) a fresh hash round-trips through our own verifier.
+        let h = passlib_pbkdf2_sha256_hash("hunter2");
+        assert!(h.starts_with("$pbkdf2-sha256$29000$"));
+        assert!(passlib_pbkdf2_sha256_verify("hunter2", &h));
+    }
 }

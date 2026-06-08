@@ -63,6 +63,46 @@ json.dump(cfg, open(p,"w"), indent=1)
 PY
 }
 
+set_cfg_key() { # set_cfg_key KEY VALUE   (delete the key if VALUE is empty)
+  py - "$CSC" "$1" "${2-}" <<'PY'
+import json,sys
+p,key,val=sys.argv[1],sys.argv[2],(sys.argv[3] if len(sys.argv)>3 else "")
+cfg=json.load(open(p))
+if val=="": cfg.pop(key, None)
+else: cfg[key]=val
+json.dump(cfg, open(p,"w"), indent=1)
+PY
+}
+
+# --- command shim (routes `bench <cmd>` through ferro for the commands it implements) ---------
+# frappe's bench_helper.py is the dispatch target of `bench <cmd>`. We replace it with
+# contrib/ferro_bench_shim.py (saving the original beside it), so supported commands re-exec the
+# ferro binary and everything else still runs real Python. `off` restores the original.
+SHIM_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ferro_bench_shim.py"
+BENCH_HELPER="$BENCH_DIR/apps/frappe/frappe/utils/bench_helper.py"
+BENCH_HELPER_ORIG="$BENCH_DIR/apps/frappe/frappe/utils/bench_helper_ferro_orig.py"
+
+shim_installed() { [[ -f "$BENCH_HELPER_ORIG" ]]; }
+
+install_shim() {
+  [[ -f "$BENCH_HELPER" ]] || { echo "  (no frappe bench_helper.py found at $BENCH_HELPER — command shim skipped)"; return 0; }
+  [[ -f "$SHIM_SRC" ]] || { echo "  (shim source missing: $SHIM_SRC — command shim skipped)"; return 0; }
+  if ! shim_installed; then
+    cp "$BENCH_HELPER" "$BENCH_HELPER_ORIG"   # one-time backup of the real helper
+  fi
+  cp "$SHIM_SRC" "$BENCH_HELPER"
+  set_cfg_key ferro_bin "$FERRO_BIN"
+  echo "  command shim installed -> bench commands route through ferro (ferro_bin=$FERRO_BIN)"
+}
+
+remove_shim() {
+  if shim_installed; then
+    mv "$BENCH_HELPER_ORIG" "$BENCH_HELPER"    # restore the real helper byte-for-byte
+    echo "  command shim removed -> bench commands run real Python again"
+  fi
+  set_cfg_key ferro_bin ""                      # drop the key
+}
+
 PORT="${FERRO_PORT:-$(get_cfg webserver_port 8000)}"
 THREADS="${FERRO_THREADS:-$(get_cfg gunicorn_workers 5)}"
 # The all-in-one ferro web command. In --bench-mode ferro also hosts the realtime (socket.io),
@@ -79,6 +119,7 @@ status() {
   echo "bench:        $BENCH_DIR"
   echo "web_runtime:  $rt"
   echo "ferro binary: $FERRO_BIN $([[ -x "$FERRO_BIN" ]] && echo '(ok)' || echo '(MISSING - build it)')"
+  echo "command shim: $(shim_installed && echo 'installed (bench cmds -> ferro)' || echo 'not installed (bench cmds -> Python)')"
   if [[ -f "$PROCFILE" ]]; then
     echo "Procfile ($(grep -cE '^[a-zA-Z_]+:' "$PROCFILE") process line(s)):"
     grep -E '^[a-zA-Z_]+:' "$PROCFILE" | sed 's/^/  /'
@@ -106,6 +147,7 @@ open(p, "w").write("\n".join(out) + "\n")
 PY
   fi
   set_runtime ferro
+  install_shim
   echo "switched ON: web runtime -> ferro (backend collapsed into one process)"
   status
   echo
@@ -134,7 +176,8 @@ PY
   # also drop the stale per-line backup from older versions of this script
   rm -f "$PROCFILE.ferro-orig-web"
   set_runtime gunicorn
-  echo "switched OFF: web runtime -> gunicorn (bench serve); original Procfile restored"
+  remove_shim
+  echo "switched OFF: web runtime -> gunicorn (bench serve); original Procfile + bench_helper restored"
   status
 }
 

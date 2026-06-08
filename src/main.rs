@@ -13,6 +13,7 @@
 //! `gunicorn frappe.app:application` web process and reads sites/ exactly like `bench serve`.
 
 mod auth;
+mod bench;
 mod cache;
 mod crypto;
 mod desk;
@@ -88,6 +89,7 @@ fn main() {
         Some("serve") => serve(&args[2..]),
         Some("provision-key") => provision(&args[2..]),
         Some("request") => request_cli(&args[2..]),
+        Some("bench") => bench::dispatch(&args[2..]),
         Some(db) if args.len() == 2 => smoke(db),
         _ => {
             eprintln!(
