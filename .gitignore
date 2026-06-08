@@ -1,0 +1,6 @@
+# Rust build output
+/target/
+
+# Editor / tooling backups and stray artifacts
+*.bak
+POST

@@ -2,13 +2,19 @@
 //! SQLite site, in place of the CPython+Frappe worker.
 //!
 //! Usage:
-//!   ferro serve <site-dir-or-db> [--port N] [--threads N] [--default-user U] [--meta-cap N] [--dev]
+//!   ferro serve [<site-dir-or-db>] [--bench-mode [--site NAME] [--sites-path PATH]]
+//!               [--port N | -b host:port] [--threads N] [--desk|--no-desk]
+//!               [--default-user U] [--meta-cap N] [--dev]
 //!   ferro request <site-dir-or-db> <METHOD> <url-path-with-query> [json-body] [--user U] [--token k:s]
 //!   ferro provision-key <site-dir-or-db> <user>
 //!   ferro <db>                      # legacy smoke test (counts meta tables)
+//!
+//! Drop-in: inside a Frappe bench, `ferro serve --bench-mode -b 127.0.0.1:8000` replaces the
+//! `gunicorn frappe.app:application` web process and reads sites/ exactly like `bench serve`.
 
 mod auth;
 mod crypto;
+mod desk;
 mod meta;
 mod naming;
 mod orm;
@@ -21,7 +27,7 @@ use rusqlite::Connection;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 use tiny_http::{Header, Method, Response, Server};
@@ -34,6 +40,8 @@ struct App {
     default_user: String,
     encryption_key: Option<String>,
     dev: bool,
+    /// When set, ferro also serves the Frappe Desk SPA (HTML shell + assets + desk.* methods).
+    desk: Option<Arc<desk::Desk>>,
 }
 
 fn main() {
@@ -45,7 +53,7 @@ fn main() {
         Some(db) if args.len() == 2 => smoke(db),
         _ => {
             eprintln!(
-                "usage:\n  ferro serve <site-dir-or-db> [--port N] [--threads N] [--default-user U] [--meta-cap N] [--dev]\n  ferro request <site-dir-or-db> <METHOD> <url-path-with-query> [json-body] [--user U] [--token k:s]\n  ferro provision-key <site-dir-or-db> <user>"
+                "usage:\n  ferro serve [<site-dir-or-db>] [--bench-mode [--site NAME] [--sites-path PATH]] [--port N | -b host:port] [--threads N] [--desk|--no-desk] [--default-user U] [--meta-cap N] [--dev]\n  ferro request <site-dir-or-db> <METHOD> <url-path-with-query> [json-body] [--user U] [--token k:s]\n  ferro provision-key <site-dir-or-db> <user>"
             );
             std::process::exit(2);
         }
@@ -91,9 +99,91 @@ fn load_encryption_key(arg: &str) -> Option<String> {
         // <site>/db/<name>.db -> site dir is the grandparent
         p.parent().and_then(|d| d.parent()).map(|x| x.to_path_buf())?
     };
-    let text = std::fs::read_to_string(site_dir.join("site_config.json")).ok()?;
+    // site_config.json wins; fall back to the bench-wide common_site_config.json (Frappe merges
+    // both, with site_config taking precedence).
+    if let Ok(text) = std::fs::read_to_string(site_dir.join("site_config.json")) {
+        if let Ok(v) = serde_json::from_str::<Value>(&text) {
+            if let Some(k) = v.get("encryption_key").and_then(|x| x.as_str()) {
+                return Some(k.to_string());
+            }
+        }
+    }
+    let common = site_dir.parent()?.join("common_site_config.json");
+    let text = std::fs::read_to_string(common).ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
     v.get("encryption_key").and_then(|x| x.as_str()).map(|s| s.to_string())
+}
+
+/// Derive `<bench>/sites/assets` from the site-dir-or-db argument. The site lives at
+/// `<sites>/<site>` (a dir) or its db at `<sites>/<site>/db/<name>.db`; assets are `<sites>/assets`.
+fn default_assets_dir(arg: &str) -> PathBuf {
+    let p = Path::new(arg);
+    let site_dir = if p.is_dir() {
+        p.to_path_buf()
+    } else {
+        // <site>/db/<name>.db -> site dir is the grandparent
+        p.parent().and_then(|d| d.parent()).map(|x| x.to_path_buf()).unwrap_or_else(|| p.to_path_buf())
+    };
+    site_dir
+        .parent()
+        .map(|sites| sites.join("assets"))
+        .unwrap_or_else(|| PathBuf::from("sites/assets"))
+}
+
+/// Resolve a site from a bench `sites/` layout the way `bench serve` does, returning the site
+/// directory and the configured `webserver_port` (if any). Resolution order for the site name:
+/// explicit `--site`, then `default_site` in common_site_config.json, then `currentsite.txt`,
+/// then — if exactly one site exists — that single site.
+fn resolve_bench_site(sites_path: Option<&str>, site: Option<&str>) -> Option<(String, Option<u16>)> {
+    // The bench web process runs from the bench root, so sites live at ./sites by default.
+    let sp = if let Some(s) = sites_path {
+        PathBuf::from(s)
+    } else if Path::new("sites").is_dir() {
+        PathBuf::from("sites")
+    } else {
+        PathBuf::from(".")
+    };
+
+    let csc: Value = std::fs::read_to_string(sp.join("common_site_config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or(Value::Null);
+    let webserver_port = csc.get("webserver_port").and_then(|v| v.as_u64()).map(|p| p as u16);
+
+    let site_name: Option<String> = site
+        .map(|s| s.to_string())
+        .or_else(|| csc.get("default_site").and_then(|v| v.as_str()).map(str::to_string))
+        .or_else(|| {
+            std::fs::read_to_string(sp.join("currentsite.txt"))
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            // Single-site fallback: a dir holding site_config.json is a site.
+            let mut found = None;
+            let mut count = 0usize;
+            if let Ok(entries) = std::fs::read_dir(&sp) {
+                for e in entries.flatten() {
+                    let p = e.path();
+                    if p.is_dir() && p.join("site_config.json").is_file() {
+                        count += 1;
+                        found = p.file_name().map(|n| n.to_string_lossy().into_owned());
+                    }
+                }
+            }
+            if count == 1 {
+                found
+            } else {
+                None
+            }
+        });
+
+    let site_dir = sp.join(site_name?);
+    if !site_dir.join("site_config.json").is_file() {
+        return None;
+    }
+    Some((site_dir.to_string_lossy().into_owned(), webserver_port))
 }
 
 fn open_conn(db_path: &str) -> Connection {
@@ -165,6 +255,7 @@ fn request_cli(args: &[String]) {
         default_user,
         encryption_key: load_encryption_key(path),
         dev,
+        desk: None,
     };
     let auth_header = token.map(|t| format!("token {t}"));
     // Infer content-type from the body shape so the CLI can exercise both JSON and form bodies.
@@ -179,29 +270,59 @@ fn request_cli(args: &[String]) {
 }
 
 fn serve(args: &[String]) {
-    let path = args.first().expect("need <site-dir-or-db>");
-    let db_path = resolve_db_path(path);
-    let encryption_key = load_encryption_key(path);
-    let mut port = 8080u16;
+    // The positional <site-dir-or-db> is OPTIONAL: in --bench-mode the site is resolved from the
+    // bench's sites/ layout (common_site_config.json + currentsite.txt / default_site) exactly the
+    // way `bench serve` does, so this binary is a byte-for-byte launch swap for gunicorn.
+    let mut positional: Option<String> = None;
+    let mut port: Option<u16> = None;
+    let mut bind_host = "0.0.0.0".to_string();
     // 4 worker threads is a good default for SQLite (writes serialize anyway) and keeps
     // resident memory low; raise --threads for more read concurrency (≈2 MiB/thread).
     let mut threads = 4usize;
     let mut default_user = "Guest".to_string();
+    let mut default_user_set = false;
     let mut meta_cap = 512usize;
     let mut dev = false;
-    let mut i = 1;
+    let mut enable_desk = false;
+    let mut disable_desk = false;
+    let mut bench_mode = false;
+    let mut site_opt: Option<String> = None;
+    let mut sites_path_opt: Option<String> = None;
+    let mut assets_dir: Option<PathBuf> = None;
+    let mut desk_boot: Option<PathBuf> = None;
+    let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--port" => {
-                port = args.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(port);
+            "--port" | "-p" => {
+                port = args.get(i + 1).and_then(|s| s.parse().ok()).or(port);
                 i += 2;
             }
-            "--threads" => {
+            // gunicorn-compatible bind: `-b host:port` (or `host`, or `:port`). Lets the prod
+            // nginx upstream stay byte-for-byte identical when swapping gunicorn -> ferro.
+            "-b" | "--bind" => {
+                if let Some(v) = args.get(i + 1) {
+                    if let Some((h, p)) = v.rsplit_once(':') {
+                        if !h.is_empty() {
+                            bind_host = h.to_string();
+                        }
+                        if let Ok(pp) = p.parse() {
+                            port = Some(pp);
+                        }
+                    } else if let Ok(pp) = v.parse::<u16>() {
+                        port = Some(pp);
+                    } else {
+                        bind_host = v.to_string();
+                    }
+                }
+                i += 2;
+            }
+            "--threads" | "-w" => {
                 threads = args.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(threads);
                 i += 2;
             }
             "--default-user" => {
                 default_user = args.get(i + 1).cloned().unwrap_or(default_user);
+                default_user_set = true;
                 i += 2;
             }
             "--meta-cap" => {
@@ -212,26 +333,112 @@ fn serve(args: &[String]) {
                 dev = true;
                 i += 1;
             }
-            _ => i += 1,
+            "--desk" => {
+                enable_desk = true;
+                i += 1;
+            }
+            "--no-desk" => {
+                disable_desk = true;
+                i += 1;
+            }
+            // The drop-in switch: resolve the site from the surrounding bench sites/ layout.
+            "--bench-mode" => {
+                bench_mode = true;
+                i += 1;
+            }
+            "--site" => {
+                site_opt = args.get(i + 1).cloned();
+                i += 2;
+            }
+            "--sites-path" => {
+                sites_path_opt = args.get(i + 1).cloned();
+                i += 2;
+            }
+            "--assets" => {
+                assets_dir = args.get(i + 1).map(PathBuf::from);
+                i += 2;
+            }
+            "--desk-boot" => {
+                desk_boot = args.get(i + 1).map(PathBuf::from);
+                i += 2;
+            }
+            other => {
+                // First bare (non-flag) token is the optional positional site path.
+                if !other.starts_with('-') && positional.is_none() {
+                    positional = Some(other.to_string());
+                }
+                i += 1;
+            }
         }
     }
+
+    // Resolve the effective site path: an explicit positional wins; otherwise --bench-mode reads
+    // the bench layout. `cfg_port` is the bench's webserver_port, used only if no port was given.
+    let mut cfg_port: Option<u16> = None;
+    let path: String = if let Some(p) = positional {
+        p
+    } else if bench_mode {
+        match resolve_bench_site(sites_path_opt.as_deref(), site_opt.as_deref()) {
+            Some((site_dir, wp)) => {
+                cfg_port = wp;
+                eprintln!("ferro bench-mode: resolved site -> {site_dir}");
+                site_dir
+            }
+            None => {
+                eprintln!(
+                    "ferro serve --bench-mode: could not resolve a site under sites/ \
+                     (pass --site NAME or --sites-path PATH)"
+                );
+                std::process::exit(2);
+            }
+        }
+    } else {
+        eprintln!("ferro serve: need <site-dir-or-db> (or --bench-mode to read the bench layout)");
+        std::process::exit(2);
+    };
+
+    let db_path = resolve_db_path(&path);
+    let encryption_key = load_encryption_key(&path);
+    let port = port.or(cfg_port).unwrap_or(8080);
+
+    // In bench-mode, serving the Desk SPA is the whole point of the swap: enable it unless the
+    // operator explicitly opted out with --no-desk.
+    if bench_mode && !disable_desk {
+        enable_desk = true;
+    }
+
+    // Desk needs a logged-in System User on every request; default to Administrator unless the
+    // operator overrode --default-user explicitly.
+    if enable_desk && !default_user_set {
+        default_user = "Administrator".to_string();
+    }
+
+    let desk = if enable_desk {
+        let adir = assets_dir.unwrap_or_else(|| default_assets_dir(&path));
+        eprintln!("ferro desk: serving assets from {}", adir.display());
+        Some(Arc::new(desk::Desk::new(adir, desk_boot)))
+    } else {
+        None
+    };
 
     let app = Arc::new(App {
         metas: MetaCache::new(meta_cap),
         default_user,
         encryption_key,
         dev,
+        desk,
     });
 
-    let addr = format!("0.0.0.0:{port}");
+    let addr = format!("{bind_host}:{port}");
     let server = Arc::new(Server::http(&addr).expect("bind"));
     eprintln!(
-        "ferro serving {} on http://{} ({} threads, default-user={}, fernet={})",
+        "ferro serving {} on http://{} ({} threads, default-user={}, fernet={}, desk={})",
         db_path,
         addr,
         threads,
         app.default_user,
-        app.encryption_key.is_some()
+        app.encryption_key.is_some(),
+        app.desk.is_some(),
     );
 
     let mut handles = Vec::new();
@@ -285,7 +492,7 @@ fn handle(mut req: tiny_http::Request, con: &Connection, app: &App) {
     // Body-size DoS guard: reject oversize bodies up front, and cap the actual read.
     if let Some(cl) = header_value(&req, "Content-Length").and_then(|s| s.parse::<u64>().ok()) {
         if cl > MAX_BODY {
-            return respond(req, app, err(app.dev, 413, "RequestEntityTooLarge", "Request body too large".into()));
+            return respond_json(req, err(app.dev, 413, "RequestEntityTooLarge", "Request body too large".into()));
         }
     }
 
@@ -295,20 +502,63 @@ fn handle(mut req: tiny_http::Request, con: &Connection, app: &App) {
         let mut raw = Vec::new();
         let _ = limited.read_to_end(&mut raw);
         if raw.len() as u64 > MAX_BODY {
-            return respond(req, app, err(app.dev, 413, "RequestEntityTooLarge", "Request body too large".into()));
+            return respond_json(req, err(app.dev, 413, "RequestEntityTooLarge", "Request body too large".into()));
         }
         body = String::from_utf8_lossy(&raw).into_owned();
     }
 
+    // Desk mode: serve static assets / the HTML shell / socket.io 404 / the /app->/desk redirect
+    // before the JSON API router. These are "raw" responses (HTML, binary, custom headers).
+    if let Some(desk) = &app.desk {
+        let user = match auth::resolve_user(con, auth_header.as_deref(), &app.default_user, app.encryption_key.as_deref()) {
+            AuthOutcome::Ok(id) => id.user,
+            AuthOutcome::Unauthorized => app.default_user.clone(),
+        };
+        if let Some(raw) = desk::try_raw(desk, &user, &method, &url) {
+            return respond_raw(req, raw);
+        }
+    }
+
     let resp = route(con, app, &method, &url, &body, content_type.as_deref(), auth_header.as_deref());
-    respond(req, app, resp);
+
+    // Login: set the identity cookies the SPA reads (sid is cosmetic in ferro's default-user mode).
+    if app.desk.is_some() && resp.0 == 200 && url.split('?').next() == Some("/api/method/login") {
+        let mut raw = desk::RawResp::json(resp.0, &resp.1);
+        attach_login_cookies(&mut raw, &app.default_user);
+        return respond_raw(req, raw);
+    }
+
+    respond_json(req, resp);
 }
 
-fn respond(req: tiny_http::Request, _app: &App, resp: (u16, Value)) {
-    let (status, value) = resp;
-    let payload = serde_json::to_vec(&value).unwrap_or_else(|_| b"{}".to_vec());
-    let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
-    let response = Response::from_data(payload).with_status_code(status).with_header(header);
+/// Append the Set-Cookie headers a Frappe login normally returns, so the SPA can read the user.
+fn attach_login_cookies(raw: &mut desk::RawResp, user: &str) {
+    let sid = util::random_name();
+    for c in [
+        format!("sid={sid}; Path=/; HttpOnly; SameSite=Lax"),
+        "system_user=yes; Path=/; SameSite=Lax".to_string(),
+        format!("full_name={user}; Path=/; SameSite=Lax"),
+        format!("user_id={user}; Path=/; SameSite=Lax"),
+        "user_lang=en; Path=/; SameSite=Lax".to_string(),
+    ] {
+        raw.headers.push(("Set-Cookie".into(), c));
+    }
+}
+
+fn respond_json(req: tiny_http::Request, resp: (u16, Value)) {
+    respond_raw(req, desk::RawResp::json(resp.0, &resp.1));
+}
+
+fn respond_raw(req: tiny_http::Request, raw: desk::RawResp) {
+    let mut response = Response::from_data(raw.body).with_status_code(raw.status);
+    if let Ok(h) = Header::from_bytes(b"Content-Type".as_slice(), raw.content_type.as_bytes()) {
+        response = response.with_header(h);
+    }
+    for (k, v) in &raw.headers {
+        if let Ok(h) = Header::from_bytes(k.as_bytes(), v.as_bytes()) {
+            response = response.with_header(h);
+        }
+    }
     let _ = req.respond(response);
 }
 
@@ -376,7 +626,16 @@ fn route(
     }
 
     match segments.get(1).map(|s| s.as_str()) {
-        Some("method") => route_method(app, &ident, &segments),
+        Some("method") => {
+            let mname = segments.get(2).map(|s| s.as_str()).unwrap_or("");
+            // Desk's frappe.* whitelisted methods (list/form/boot), mapped onto ferro's ORM.
+            if app.desk.is_some() {
+                if let Some(r) = desk::route_method(con, &app.metas, &ident.user, mname, &params, body, content_type, method) {
+                    return r;
+                }
+            }
+            route_method(app, &ident, &segments)
+        }
         Some("resource") => route_resource(con, app, &ident, method, &segments, &params, body, content_type),
         _ => err(app.dev, 404, "NotFound", format!("Unknown path /{}", segments.join("/"))),
     }

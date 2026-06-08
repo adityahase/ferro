@@ -2,16 +2,41 @@
 name = "ferro"
 version = "0.1.0"
 edition = "2021"
-description = "A Rust runtime that serves the Frappe REST API against an existing Frappe SQLite site — replacing the CPython+Frappe worker."
+description = "A Rust runtime that serves the Frappe REST API against an existing Frappe SQLite site — replacing the CPython+Frappe worker. With the `python` feature it embeds CPython to run Frappe app controllers (ferrod)."
 
+# Shared library: the data-plane modules, reused by both binaries.
+[lib]
+name = "ferro"
+path = "src/lib.rs"
+
+# Pure-Rust REST runtime (the measured baseline). Builds with no features.
 [[bin]]
 name = "ferro"
 path = "src/main.rs"
+
+# ferrod = ferro + embedded CPython, running real Frappe app controllers on the
+# Rust data plane. Only built with `--features python` (links libpython).
+[[bin]]
+name = "ferrod"
+path = "src/ferrod.rs"
+required-features = ["python"]
+
+# ferro-native = ferro + Frappe app controllers TRANSPILED to Rust (src/native/generated.rs) and
+# compiled in. NO Python interpreter, no PyO3. Only built with `--features native`.
+[[bin]]
+name = "ferro-native"
+path = "src/native/main.rs"
+required-features = ["native"]
+
+[features]
+python = ["dep:pyo3"]
+native = []
 
 [dependencies]
 rusqlite = { version = "0.31", features = ["bundled"] }
 tiny_http = "0.12"
 serde_json = { version = "1", features = ["preserve_order"] }
+pyo3 = { version = "0.23", features = ["auto-initialize"], optional = true }
 
 [profile.release]
 opt-level = "z"

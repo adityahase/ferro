@@ -1,1 +1,0 @@
-/home/frappe/ferro/target/release/ferro: /home/frappe/ferro/src/auth.rs /home/frappe/ferro/src/crypto.rs /home/frappe/ferro/src/main.rs /home/frappe/ferro/src/meta.rs /home/frappe/ferro/src/naming.rs /home/frappe/ferro/src/orm.rs /home/frappe/ferro/src/util.rs
