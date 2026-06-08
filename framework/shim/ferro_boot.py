@@ -12,7 +12,7 @@ Responsibilities:
   5. dispatch_write(): drive the controller lifecycle for a hooked write, calling into ferro_rt
      for the actual persistence.
 """
-import os, sys, json, types, importlib, importlib.abc, importlib.machinery, traceback
+import os, sys, json, ast, types, importlib, importlib.abc, importlib.machinery, traceback
 
 import frappe
 
@@ -233,7 +233,12 @@ def load(apps=None, mode="all", catch_all=True, verbose=False):
                 evs = _ast_scan_events(py)
                 if evs:
                     _AST_EVENTS[doctype] = evs
-    _LOADED.update(controllers=n_ctrl, doctypes=n_dt, import_errors=n_err)
+    # Map of whitelisted methods across the loaded apps, built once on worker start so ferro can
+    # auto-route any /api/method/<app>.* call it doesn't serve natively into Python (see call_method).
+    _WHITELISTED.clear()
+    for app in apps:
+        _WHITELISTED.update(_scan_whitelisted(app))
+    _LOADED.update(controllers=n_ctrl, doctypes=n_dt, import_errors=n_err, whitelisted=len(_WHITELISTED))
     return dict(_LOADED, stubbed=len(_FINDER.stubbed))
 
 
@@ -307,6 +312,92 @@ def _resolve(dotted):
         fn = None
     _RESOLVE_CACHE[dotted] = fn
     return fn
+
+
+# ----------------------------------------------------------------- whitelisted-method map
+# Built on worker start (load()) so ferro can decide, per /api/method/<dotted> request, whether it
+# is a real app endpoint to route into Python — without importing every api module up front.
+_WHITELISTED = set()
+
+
+def _is_whitelist_decorator(dec):
+    """@frappe.whitelist, @frappe.whitelist(...), @whitelist, @whitelist(...)."""
+    target = dec.func if isinstance(dec, ast.Call) else dec
+    if isinstance(target, ast.Attribute):
+        return target.attr == "whitelist"
+    if isinstance(target, ast.Name):
+        return target.id == "whitelist"
+    return False
+
+
+def _scan_whitelisted(app):
+    """Static AST scan: dotted paths of every MODULE-LEVEL function decorated @frappe.whitelist in
+    `app`. (Class-method whitelists are reached through frappe.client/run_doc_method, not by dotted
+    path, so they're out of scope here.) No import — cheap and complete."""
+    import glob
+    base = _inner_pkg(app)
+    out = set()
+    for py in glob.glob(os.path.join(base, "**", "*.py"), recursive=True):
+        if os.path.basename(py).startswith("test_"):
+            continue
+        try:
+            tree = ast.parse(open(py, "r", encoding="utf-8").read())
+        except Exception:
+            continue
+        mod = _modname(app, py)
+        # a package's __init__.py is addressed by the package path, not `<pkg>.__init__`
+        if mod.endswith(".__init__"):
+            mod = mod[: -len(".__init__")]
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
+                _is_whitelist_decorator(d) for d in node.decorator_list
+            ):
+                out.add(f"{mod}.{node.name}")
+    return out
+
+
+def whitelisted_methods_json():
+    """The map ferro pulls at boot to gate auto-routing. Sorted list of dotted paths."""
+    return json.dumps(sorted(_WHITELISTED))
+
+
+def is_whitelisted(method):
+    return method in _WHITELISTED
+
+
+def call_method(method, args_json, user):
+    """Invoke a whitelisted method by dotted path with the request's form args, returning a
+    {"message": <retval>} JSON envelope (frappe.handler.execute_cmd semantics, minimally). ferro
+    only calls this for methods already in the whitelisted map. Raises on a missing/uncallable
+    target or a controller error; ferrod maps the exception to an HTTP status."""
+    import inspect
+
+    frappe.local.session.user = user
+    args = json.loads(args_json) if args_json else {}
+    if not isinstance(args, dict):
+        args = {}
+    # populate frappe.form_dict (and the module alias) the way the real handler does
+    frappe.local.form_dict = frappe._dict(args)
+    frappe.form_dict = frappe.local.form_dict
+
+    fn = _resolve(method)
+    if fn is None or not callable(fn):
+        raise LookupError(f"whitelisted method not found: {method}")
+
+    # Pass only the args the function actually accepts (unless it takes **kwargs) — Frappe filters
+    # the form_dict to the signature so stray query params (cmd, _, csrf…) don't blow up the call.
+    try:
+        sig = inspect.signature(fn)
+        if any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+            kwargs = dict(args)
+        else:
+            accepted = set(sig.parameters)
+            kwargs = {k: v for k, v in args.items() if k in accepted}
+    except (TypeError, ValueError):
+        kwargs = {}
+
+    result = fn(**kwargs)
+    return json.dumps({"message": result}, default=str)
 
 
 def _run_event(doc, event):

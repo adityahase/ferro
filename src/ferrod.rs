@@ -27,6 +27,11 @@ use tiny_http::{Header, Method, Response, Server};
 const SHIM_DIR: &str = "/home/frappe/ferro-demo/shim";
 const DEFAULT_REPOS: &str = "/home/frappe/ferro-apps-investigation/repos";
 
+/// The shim dir to put on sys.path — `FERRO_SHIM` overrides the vendored default.
+fn shim_dir() -> String {
+    std::env::var("FERRO_SHIM").unwrap_or_else(|_| SHIM_DIR.to_string())
+}
+
 // ----------------------------------------------------------------- memory reporting
 struct Mem {
     rss: f64,
@@ -100,6 +105,9 @@ const DELETE_EVENTS: &[&str] = &["on_trash", "after_delete"];
 struct App {
     metas: Arc<MetaCache>,
     registry: Registry,
+    /// Dotted paths of every whitelisted app method, mapped on worker start. A `/api/method/<m>`
+    /// call ferro doesn't serve natively is auto-routed into Python iff `m` is in here.
+    whitelisted: HashSet<String>,
     default_user: String,
     py_enabled: bool,
     dev: bool,
@@ -124,12 +132,12 @@ fn resolve_db_path(arg: &str) -> String {
 }
 
 /// Initialise the interpreter, set sys.path, import the shim, load controllers, read the registry.
-fn py_boot(apps: &Option<Vec<String>>, load_mode: &str, verbose: bool) -> PyResult<Registry> {
+fn py_boot(apps: &Option<Vec<String>>, load_mode: &str, verbose: bool) -> PyResult<(Registry, HashSet<String>)> {
     Python::with_gil(|py| {
         // sys.path: the shim first, then ferro_boot adds the app repo roots itself.
         let sys = py.import("sys")?;
         let path = sys.getattr("path")?;
-        path.call_method1("insert", (0, SHIM_DIR))?;
+        path.call_method1("insert", (0, shim_dir()))?;
 
         let frappe = py.import("frappe")?;
         let _ = frappe; // import side effect: registers frappe.* in sys.modules
@@ -166,7 +174,17 @@ fn py_boot(apps: &Option<Vec<String>>, load_mode: &str, verbose: bool) -> PyResu
             registry.by_doctype.len(),
             registry.wildcard
         );
-        Ok(registry)
+
+        // Whitelisted-method map: built once on worker start (see ferro_boot.load), pulled here so
+        // route() can auto-route any /api/method/<app>.* it doesn't serve natively into Python.
+        let wl_json: String = boot.call_method0("whitelisted_methods_json")?.extract()?;
+        let whitelisted: HashSet<String> = serde_json::from_str::<Vec<String>>(&wl_json)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        eprintln!("[ferrod] whitelisted app methods: {}", whitelisted.len());
+
+        Ok((registry, whitelisted))
     })
 }
 
@@ -235,6 +253,45 @@ fn run_py_write(con: &Connection, doctype: &str, op: &str, data: &Value, user: &
     result
 }
 
+/// Auto-route a whitelisted `/api/method/<method>` call into Python. Mirrors `run_py_write`: shares
+/// the request connection so the method's ferro_rt reads/writes see the same SQLite state, then
+/// hands (method, form-args, user) to the shim's `call_method`, which returns a `{"message": …}`
+/// envelope. Only called for methods already in the whitelisted map.
+fn run_py_method(con: &Connection, method: &str, args_json: &str, user: &str) -> Result<Value, PyErrBox> {
+    pyrt::set_request_con(con);
+    pyrt::set_user(user);
+    let result = Python::with_gil(|py| -> Result<Value, PyErrBox> {
+        let boot = py.import("ferro_boot").map_err(PyErrBox::from_err)?;
+        let out = boot
+            .call_method1("call_method", (method, args_json, user))
+            .map_err(PyErrBox::from_err)?;
+        let s: String = out.extract().map_err(PyErrBox::from_err)?;
+        serde_json::from_str::<Value>(&s).map_err(|e| PyErrBox {
+            status: 500,
+            env: err(true, 500, "ServerError", format!("bad method response json: {e}")).1,
+        })
+    });
+    pyrt::clear_request_con();
+    result
+}
+
+/// Merge query params + JSON body into the form-dict the whitelisted method receives.
+fn method_args_json(params: &HashMap<String, String>, body: &str) -> String {
+    let mut args = Map::new();
+    for (k, v) in params {
+        args.insert(k.clone(), Value::from(v.clone()));
+    }
+    let t = body.trim();
+    if !t.is_empty() {
+        if let Ok(Value::Object(m)) = serde_json::from_str::<Value>(t) {
+            for (k, v) in m {
+                args.insert(k, v);
+            }
+        }
+    }
+    serde_json::to_string(&Value::Object(args)).unwrap_or_else(|_| "{}".into())
+}
+
 /// A captured Python error (status computed under the GIL we already held).
 struct PyErrBox {
     status: u16,
@@ -269,6 +326,14 @@ fn route(con: &Connection, app: &App, method: &str, url: &str, body: &str, auth_
             match m {
                 "ping" | "frappe.ping" => (200, json!({"message":"pong"})),
                 "frappe.auth.get_logged_user" => (200, json!({"message": ident.user})),
+                // Auto-route: anything in the whitelisted-method map runs its real Python.
+                other if app.py_enabled && app.whitelisted.contains(other) => {
+                    let args_json = method_args_json(&params, body);
+                    match run_py_method(con, other, &args_json, &ident.user) {
+                        Ok(v) => (200, v),
+                        Err(b) => (b.status, b.env),
+                    }
+                }
                 other => err(app.dev, 404, "NotFound", format!("Method '{other}' not implemented")),
             }
         }
@@ -508,10 +573,11 @@ fn boot_state(args: &Args) -> (Arc<App>, String) {
     let db_path = resolve_db_path(&args.site);
     let metas = Arc::new(MetaCache::new(2048));
     pyrt::init_state(db_path.clone(), metas.clone());
-    let registry = py_boot(&args.apps, &args.load, false).expect("python boot");
+    let (registry, whitelisted) = py_boot(&args.apps, &args.load, false).expect("python boot");
     let app = Arc::new(App {
         metas,
         registry,
+        whitelisted,
         default_user: args.user.clone(),
         py_enabled: true,
         dev: args.dev,
