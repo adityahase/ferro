@@ -1,0 +1,56 @@
+[
+  {
+    "name": "Bank Guarantee.validate throws when no customer/supplier",
+    "doctype": "Bank Guarantee",
+    "body": {"bg_type": "Receiving", "amount": 1000, "start_date": "2026-01-01"},
+    "expect_status": 417,
+    "expect_msg_contains": "customer or supplier"
+  },
+  {
+    "name": "Price List.validate requires Buying or Selling",
+    "doctype": "Price List",
+    "body": {"price_list_name": "FN-PL-NEITHER", "currency": "USD", "buying": 0, "selling": 0},
+    "expect_status": 417,
+    "expect_msg_contains": "applicable for Buying or Selling"
+  },
+  {
+    "name": "Vehicle Log.validate rejects odometer < last_odometer (with formatted {0})",
+    "doctype": "Vehicle Log",
+    "body": {"odometer": 5, "last_odometer": 10},
+    "expect_status": 417,
+    "expect_msg_contains": "greater than Last Odometer Value 10"
+  },
+  {
+    "name": "Coupon Code.validate (Gift Card) requires a customer",
+    "doctype": "Coupon Code",
+    "body": {"coupon_name": "FN-GC-NOCUST", "coupon_type": "Gift Card"},
+    "expect_status": 417,
+    "expect_msg_contains": "select the customer"
+  },
+  {
+    "name": "Coupon Code.validate (Gift Card) COMPUTES maximum_use = 1 and persists",
+    "doctype": "Coupon Code",
+    "delete_first": "FN-GC-OK",
+    "body": {"coupon_name": "FN-GC-OK", "coupon_type": "Gift Card", "customer": "Demo Customer"},
+    "expect_status": 200,
+    "expect_field": "maximum_use",
+    "expect_value": 1
+  },
+  {
+    "name": "Coupon Code.validate (Promotional) leaves maximum_use untouched, inserts fine",
+    "doctype": "Coupon Code",
+    "delete_first": "FN-PROMO-OK",
+    "body": {"coupon_name": "FN-PROMO-OK", "coupon_type": "Promotional"},
+    "expect_status": 200,
+    "expect_field": "coupon_name",
+    "expect_value": "FN-PROMO-OK"
+  },
+  {
+    "name": "Pure-CRUD doctype (ToDo, no native logic) inserts via Rust ORM",
+    "doctype": "ToDo",
+    "body": {"description": "ferro-native CRUD path", "status": "Open"},
+    "expect_status": 200,
+    "expect_field": "status",
+    "expect_value": "Open"
+  }
+]

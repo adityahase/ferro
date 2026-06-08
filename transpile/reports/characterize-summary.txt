@@ -1,0 +1,39 @@
+
+=== TRANSPILABILITY SUMMARY ===
+doctype controllers analyzed : 766
+  pure-CRUD (zero code)      : 434  (57%)
+  full-green (all methods OK): 53
+  partial (some methods OK)  : 243
+  red (no methods OK)        : 36
+  => fully native (crud+green): 487  (64%)
+methods total                : 3650
+  green                      : 1855  (51%)
+  red                        : 1795
+lifecycle methods            : 755  green 484  (64%)
+
+Top blockers (what to add next):
+    335  node:BitAnd
+    202  call:frappe.qb.DocType
+    201  call:where
+    140  call:select
+    126  call:frappe.qb.from_
+    118  call:bold
+    103  call:super
+    103  call:run
+     98  call:frappe.db.sql
+     84  call:query.where
+     63  node:ExceptHandler
+     61  node:Try
+     58  dict:non-str-key
+     56  call:query.run
+     54  node:NamedExpr
+     51  node:BitOr
+     50  call:Sum
+     50  call:frappe.get_single_value
+     46  call:throw
+     45  call:on
+     41  call:as_
+     37  call:**kwargs
+     31  call:getattr
+     27  call:qb.DocType
+     25  call:isinstance

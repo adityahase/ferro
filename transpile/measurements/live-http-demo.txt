@@ -1,0 +1,47 @@
+LIVE HTTP DEMO — ferro-native serving the Frappe REST API with transpiled-to-Rust controllers,
+zero Python interpreter. (captured on-host)
+
+$ ferro-native serve /tmp/ferro_serve.db --port 18080
+ferro-native serving ... (4 threads, user=Administrator, native_doctypes=137)
+[ferro-native] post-boot RSS=3.2 PSS=1.1 USS=1.0 MB        <-- idle, no Python
+
+$ curl localhost:18080/api/method/ping
+{"message":"pong"}
+
+# READ path (pure Rust, no controller)
+$ curl 'localhost:18080/api/resource/Coupon Code?limit_page_length=2'
+{"data":[]}
+
+# WRITE: Gift Card WITHOUT customer -> the TRANSPILED Coupon Code.validate runs and THROWS
+$ curl -X POST .../api/resource/Coupon%20Code -d '{"coupon_name":"LIVE-GC-1","coupon_type":"Gift Card"}'
+{"exc_type":"ValidationError",
+ "_server_messages":"[\"{\\\"message\\\":\\\"Please select the customer.\\\",\\\"title\\\":\\\"Error\\\"}\"]"}
+   ^-- Frappe-compatible error envelope; the message comes from the Python source line
+       `frappe.throw(_("Please select the customer."))`, now executing as compiled Rust.
+
+# WRITE: Gift Card WITH customer -> validate sets maximum_use = 1, doc persists
+$ curl -X POST .../api/resource/Coupon%20Code -d '{"coupon_name":"LIVE-GC-2","coupon_type":"Gift Card","customer":"Acme"}'
+{"data":{... "coupon_name":"LIVE-GC-2","coupon_type":"Gift Card","customer":"Acme",
+         "maximum_use":1, ...}}                              <-- COMPUTED natively
+
+# READ BACK confirms persistence
+$ curl '.../api/resource/Coupon%20Code/LIVE-GC-2'
+maximum_use = 1 | coupon_type = Gift Card
+
+Original Python (erpnext/.../coupon_code/coupon_code.py):
+    def validate(self):
+        if self.coupon_type == "Gift Card":
+            self.maximum_use = 1
+            if not self.customer:
+                frappe.throw(_("Please select the customer."))
+
+Transpiled Rust (generated.rs, executed above):
+    fn c177_validate(doc: &mut Value, ctx: &mut Ctx) -> Result<Value, FerroErr> {
+        if rt::truthy(&(Value::Bool(rt::truthy(&rt::eq(&(rt::doc_get(doc,"coupon_type")), &(rt::s("Gift Card"))))))) {
+            { let __a1 = Value::from(1i64); rt::doc_set(doc, "maximum_use", __a1) };
+            if rt::truthy(&(Value::Bool(!rt::truthy(&(rt::doc_get(doc,"customer")))))) {
+                return Err(rt::throw(&(rt::i18n(&(rt::s("Please select the customer."))))));
+            }
+        }
+        Ok(Value::Null)
+    }

@@ -1,0 +1,29 @@
+=== TRANSPILE RESULT ===
+controllers scanned          : 332
+methods emitted (compiled in): 1274
+  of which REACHABLE at runtime (via lifecycle dispatch): 311
+  not-yet-routed (@whitelist RPCs, no dispatch path)    : 963
+lifecycle handlers wired     : 162
+doctypes with native logic   : 133
+generated.rs lines           : 1461
+top lowering-fail reasons:
+    127  module value frappe.qb
+    113  free name frappe
+     46  call set
+     36  stmt Try
+     33  expr NamedExpr
+     28  **kwargs
+     25  non-str dict key
+     23  method .save
+     22  method .insert
+     20  free name self
+     20  module value frappe.db
+     19  stmt FunctionDef
+     19  self.set_onload
+     19  call validate_active_employee
+     19  free name erpnext
+     18  call isinstance
+     18  method .db_set
+     16  call dict
+     16  call StatusService
+     13  attr set on Attribute(value=Name(id='self', ctx=Load

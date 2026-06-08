@@ -1,0 +1,9 @@
+  PASS  Bank Guarantee.validate throws when no customer/supplier (Bank Guarantee) -> HTTP 417
+  PASS  Price List.validate requires Buying or Selling (Price List) -> HTTP 417
+  PASS  Vehicle Log.validate rejects odometer < last_odometer (with formatted {0}) (Vehicle Log) -> HTTP 417
+  PASS  Coupon Code.validate (Gift Card) requires a customer (Coupon Code) -> HTTP 417
+  PASS  Coupon Code.validate (Gift Card) COMPUTES maximum_use = 1 and persists (Coupon Code) -> HTTP 200
+  PASS  Coupon Code.validate (Promotional) leaves maximum_use untouched, inserts fine (Coupon Code) -> HTTP 200
+  PASS  Pure-CRUD doctype (ToDo, no native logic) inserts via Rust ORM (ToDo) -> HTTP 200
+
+selftest: 7 passed, 0 failed (transpiled logic executed natively)

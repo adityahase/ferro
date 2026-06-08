@@ -1,0 +1,460 @@
+{
+  "apps": {
+    "crm": {
+      "doctypes": 43,
+      "pure_crud": 23,
+      "full_green": 3,
+      "partial": 14,
+      "red": 3,
+      "methods": 150,
+      "methods_green": 72,
+      "methods_red": 78,
+      "lifecycle": 32,
+      "lifecycle_green": 20,
+      "whitelist": 0,
+      "whitelist_green": 0,
+      "parse_errors": 0
+    },
+    "helpdesk": {
+      "doctypes": 41,
+      "pure_crud": 18,
+      "full_green": 6,
+      "partial": 15,
+      "red": 2,
+      "methods": 205,
+      "methods_green": 125,
+      "methods_red": 80,
+      "lifecycle": 59,
+      "lifecycle_green": 37,
+      "whitelist": 0,
+      "whitelist_green": 0,
+      "parse_errors": 0
+    },
+    "gameplan": {
+      "doctypes": 27,
+      "pure_crud": 11,
+      "full_green": 0,
+      "partial": 11,
+      "red": 5,
+      "methods": 121,
+      "methods_green": 47,
+      "methods_red": 74,
+      "lifecycle": 34,
+      "lifecycle_green": 19,
+      "whitelist": 0,
+      "whitelist_green": 0,
+      "parse_errors": 0
+    },
+    "hrms": {
+      "doctypes": 158,
+      "pure_crud": 79,
+      "full_green": 12,
+      "partial": 61,
+      "red": 6,
+      "methods": 686,
+      "methods_green": 349,
+      "methods_red": 337,
+      "lifecycle": 181,
+      "lifecycle_green": 108,
+      "whitelist": 0,
+      "whitelist_green": 0,
+      "parse_errors": 0
+    },
+    "erpnext": {
+      "doctypes": 497,
+      "pure_crud": 303,
+      "full_green": 32,
+      "partial": 142,
+      "red": 20,
+      "methods": 2488,
+      "methods_green": 1262,
+      "methods_red": 1226,
+      "lifecycle": 449,
+      "lifecycle_green": 300,
+      "whitelist": 0,
+      "whitelist_green": 0,
+      "parse_errors": 0
+    }
+  },
+  "total": {
+    "doctypes": 766,
+    "pure_crud": 434,
+    "full_green": 53,
+    "partial": 243,
+    "red": 36,
+    "methods": 3650,
+    "methods_green": 1855,
+    "methods_red": 1795,
+    "lifecycle": 755,
+    "lifecycle_green": 484,
+    "whitelist": 0,
+    "whitelist_green": 0,
+    "parse_errors": 0
+  },
+  "top_blockers": [
+    [
+      "node:BitAnd",
+      335
+    ],
+    [
+      "call:frappe.qb.DocType",
+      202
+    ],
+    [
+      "call:where",
+      201
+    ],
+    [
+      "call:select",
+      140
+    ],
+    [
+      "call:frappe.qb.from_",
+      126
+    ],
+    [
+      "call:bold",
+      118
+    ],
+    [
+      "call:super",
+      103
+    ],
+    [
+      "call:run",
+      103
+    ],
+    [
+      "call:frappe.db.sql",
+      98
+    ],
+    [
+      "call:query.where",
+      84
+    ],
+    [
+      "node:ExceptHandler",
+      63
+    ],
+    [
+      "node:Try",
+      61
+    ],
+    [
+      "dict:non-str-key",
+      58
+    ],
+    [
+      "call:query.run",
+      56
+    ],
+    [
+      "node:NamedExpr",
+      54
+    ],
+    [
+      "node:BitOr",
+      51
+    ],
+    [
+      "call:Sum",
+      50
+    ],
+    [
+      "call:frappe.get_single_value",
+      50
+    ],
+    [
+      "call:throw",
+      46
+    ],
+    [
+      "call:on",
+      45
+    ],
+    [
+      "call:as_",
+      41
+    ],
+    [
+      "call:**kwargs",
+      37
+    ],
+    [
+      "call:getattr",
+      31
+    ],
+    [
+      "call:qb.DocType",
+      27
+    ],
+    [
+      "call:isinstance",
+      25
+    ],
+    [
+      "call:make_property_setter",
+      24
+    ],
+    [
+      "node:While",
+      24
+    ],
+    [
+      "call:frappe.enqueue",
+      24
+    ],
+    [
+      "call:hasattr",
+      23
+    ],
+    [
+      "call:validate_active_employee",
+      22
+    ],
+    [
+      "call:format_date",
+      22
+    ],
+    [
+      "call:qb.from_",
+      22
+    ],
+    [
+      "call:__init__",
+      22
+    ],
+    [
+      "call:msgprint",
+      22
+    ],
+    [
+      "call:timedelta",
+      20
+    ],
+    [
+      "call:POSService",
+      20
+    ],
+    [
+      "call:capture_event",
+      19
+    ],
+    [
+      "node:Lambda",
+      19
+    ],
+    [
+      "call:next",
+      18
+    ],
+    [
+      "call:frappe.qb.update",
+      18
+    ]
+  ],
+  "green_method_names": [
+    [
+      "validate",
+      170
+    ],
+    [
+      "on_submit",
+      52
+    ],
+    [
+      "on_cancel",
+      50
+    ],
+    [
+      "before_save",
+      35
+    ],
+    [
+      "on_update",
+      33
+    ],
+    [
+      "on_discard",
+      31
+    ],
+    [
+      "on_trash",
+      21
+    ],
+    [
+      "after_insert",
+      20
+    ],
+    [
+      "before_submit",
+      19
+    ],
+    [
+      "before_validate",
+      18
+    ],
+    [
+      "before_insert",
+      16
+    ],
+    [
+      "on_update_after_submit",
+      15
+    ],
+    [
+      "set_status",
+      15
+    ],
+    [
+      "onload",
+      13
+    ],
+    [
+      "autoname",
+      12
+    ],
+    [
+      "validate_dates",
+      12
+    ],
+    [
+      "after_delete",
+      10
+    ],
+    [
+      "default_list_data",
+      9
+    ],
+    [
+      "set_title",
+      7
+    ],
+    [
+      "before_update_after_submit",
+      6
+    ],
+    [
+      "get_list",
+      6
+    ],
+    [
+      "before_cancel",
+      6
+    ],
+    [
+      "validate_accounts",
+      5
+    ],
+    [
+      "set_missing_values",
+      5
+    ],
+    [
+      "validate_mandatory",
+      5
+    ]
+  ],
+  "red_method_names": [
+    [
+      "validate",
+      88
+    ],
+    [
+      "on_submit",
+      36
+    ],
+    [
+      "on_cancel",
+      30
+    ],
+    [
+      "on_update",
+      24
+    ],
+    [
+      "on_trash",
+      20
+    ],
+    [
+      "__init__",
+      20
+    ],
+    [
+      "after_insert",
+      17
+    ],
+    [
+      "onload",
+      17
+    ],
+    [
+      "before_insert",
+      12
+    ],
+    [
+      "autoname",
+      11
+    ],
+    [
+      "make_gl_entries",
+      10
+    ],
+    [
+      "get_gl_entries",
+      9
+    ],
+    [
+      "update_status",
+      9
+    ],
+    [
+      "before_save",
+      8
+    ],
+    [
+      "set_missing_values",
+      8
+    ],
+    [
+      "publish_update",
+      7
+    ],
+    [
+      "set_status",
+      7
+    ],
+    [
+      "validate_with_previous_doc",
+      7
+    ],
+    [
+      "create_additional_salary",
+      6
+    ],
+    [
+      "before_validate",
+      6
+    ],
+    [
+      "validate_overlap",
+      6
+    ],
+    [
+      "before_submit",
+      6
+    ],
+    [
+      "after_delete",
+      5
+    ],
+    [
+      "get_list_query",
+      5
+    ],
+    [
+      "clear_cache",
+      5
+    ]
+  ]
+}
