@@ -234,6 +234,95 @@ pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
+// ------------------------------ PBKDF2 / passlib --------------------------------
+// Frappe stores `User.password` (in `__Auth`) as a passlib pbkdf2_sha256 modular-crypt hash:
+//   $pbkdf2-sha256$<rounds>$<ab64(salt)>$<ab64(checksum)>
+// where checksum = PBKDF2-HMAC-SHA256(password, salt, rounds, dklen=32), default rounds=29000,
+// salt = 16 random bytes, and ab64 is passlib's "adapted base64" (standard base64 with '+'->'.'
+// and '=' padding stripped; '/' is kept). We must produce byte-identical hashes so Frappe's
+// passlib (and ferro's own login path) can verify a password ferro set.
+
+pub const PASSLIB_DEFAULT_ROUNDS: u32 = 29000;
+
+/// PBKDF2-HMAC-SHA256, built on the existing `hmac_sha256` primitive (RFC 2898).
+pub fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], rounds: u32, dklen: usize) -> Vec<u8> {
+    const HLEN: usize = 32;
+    let blocks = dklen.div_ceil(HLEN);
+    let mut out = Vec::with_capacity(blocks * HLEN);
+    for i in 1..=blocks as u32 {
+        // U1 = PRF(password, salt || INT_32_BE(i))
+        let mut msg = Vec::with_capacity(salt.len() + 4);
+        msg.extend_from_slice(salt);
+        msg.extend_from_slice(&i.to_be_bytes());
+        let mut u = hmac_sha256(password, &msg);
+        let mut t = u;
+        for _ in 1..rounds {
+            u = hmac_sha256(password, &u);
+            for k in 0..HLEN {
+                t[k] ^= u[k];
+            }
+        }
+        out.extend_from_slice(&t);
+    }
+    out.truncate(dklen);
+    out
+}
+
+/// passlib "adapted base64": standard base64, '+' -> '.', '=' padding stripped ('/' kept).
+pub fn ab64_encode(data: &[u8]) -> String {
+    let mut s = b64_encode_std(data);
+    while s.ends_with('=') {
+        s.pop();
+    }
+    s.replace('+', ".")
+}
+
+fn ab64_decode(s: &str) -> Option<Vec<u8>> {
+    // reverse: '.' -> '+', then pad to a multiple of 4 with '='.
+    let mut t = s.replace('.', "+");
+    while t.len() % 4 != 0 {
+        t.push('=');
+    }
+    b64_decode(&t, false)
+}
+
+/// Produce a passlib `$pbkdf2-sha256$...` hash with the given rounds and salt.
+pub fn passlib_pbkdf2_sha256_with(password: &str, salt: &[u8], rounds: u32) -> String {
+    let cksum = pbkdf2_hmac_sha256(password.as_bytes(), salt, rounds, 32);
+    format!(
+        "$pbkdf2-sha256${}${}${}",
+        rounds,
+        ab64_encode(salt),
+        ab64_encode(&cksum)
+    )
+}
+
+/// Hash a password the way Frappe's `update_password` does: pbkdf2_sha256, 29000 rounds,
+/// fresh 16-byte random salt. The result is verifiable by Frappe's passlib.
+pub fn passlib_pbkdf2_sha256_hash(password: &str) -> String {
+    let salt = crate::util::random_bytes(16);
+    passlib_pbkdf2_sha256_with(password, &salt, PASSLIB_DEFAULT_ROUNDS)
+}
+
+/// Verify a password against a passlib `$pbkdf2-sha256$rounds$salt$checksum` hash.
+pub fn passlib_pbkdf2_sha256_verify(password: &str, hash: &str) -> bool {
+    let parts: Vec<&str> = hash.split('$').collect();
+    // ["", "pbkdf2-sha256", rounds, salt, checksum]
+    if parts.len() != 5 || parts[1] != "pbkdf2-sha256" {
+        return false;
+    }
+    let rounds: u32 = match parts[2].parse() {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    let (salt, expect) = match (ab64_decode(parts[3]), ab64_decode(parts[4])) {
+        (Some(s), Some(e)) => (s, e),
+        _ => return false,
+    };
+    let got = pbkdf2_hmac_sha256(password.as_bytes(), &salt, rounds, expect.len());
+    ct_eq(&got, &expect)
+}
+
 // ----------------------------------- AES-128 ------------------------------------
 
 #[rustfmt::skip]

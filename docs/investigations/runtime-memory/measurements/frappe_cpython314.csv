@@ -1,0 +1,7 @@
+label,scenario,peak_rss_kib_min_of_3,peak_rss_mb
+CPython-3.14.4+Frappe17dev+SQLite,bare_env_python,9616,9.4
+CPython-3.14.4+Frappe17dev+SQLite,import_frappe,60192,58.8
+CPython-3.14.4+Frappe17dev+SQLite,init_connect_sqlite,62872,61.4
+CPython-3.14.4+Frappe17dev+SQLite,load_2_metas,113048,110.4
+CPython-3.14.4+Frappe17dev+SQLite,load_20_metas,116712,114.0
+CPython-3.14.4+Frappe17dev+SQLite,request_like_get_all,113276,110.6

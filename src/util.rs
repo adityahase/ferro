@@ -128,6 +128,31 @@ pub fn random_name() -> String {
     s
 }
 
+/// `n` cryptographically-random bytes, read in a single fixed-size pull from `/dev/urandom`
+/// (never read-to-EOF — that device never EOFs and would OOM). Falls back to a time-seeded
+/// xorshift if the device is unavailable. Used for password salts, encryption keys, db names.
+pub fn random_bytes(n: usize) -> Vec<u8> {
+    use std::io::Read;
+    let mut buf = vec![0u8; n];
+    let ok = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .is_ok();
+    if !ok {
+        let mut seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64
+            | 1;
+        for b in buf.iter_mut() {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            *b = (seed & 0xff) as u8;
+        }
+    }
+    buf
+}
+
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// Standard base64 (for the rare BLOB cell).

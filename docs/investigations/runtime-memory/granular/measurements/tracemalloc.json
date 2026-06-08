@@ -1,0 +1,1311 @@
+{
+  "traced_current_MB": 83.74,
+  "traced_peak_MB": 84.64,
+  "n_frames": 30,
+  "top_by_line": [
+    {
+      "loc": "<frozen importlib._bootstrap_external>:511",
+      "size": 45533294,
+      "count": 405468
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/utils/redis_wrapper.py:102",
+      "size": 4245317,
+      "count": 24867
+    },
+    {
+      "loc": "<frozen importlib._bootstrap>:491",
+      "size": 2518767,
+      "count": 24499
+    },
+    {
+      "loc": "<frozen abc>:106",
+      "size": 1293670,
+      "count": 4515
+    },
+    {
+      "loc": "/usr/lib/python3.14/logging/__init__.py:1248",
+      "size": 661836,
+      "count": 62
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:133",
+      "size": 440304,
+      "count": 3288
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_EU.py:79",
+      "size": 431279,
+      "count": 3346
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/_codecs/adobe_glyphs.py:50",
+      "size": 415152,
+      "count": 2
+    },
+    {
+      "loc": "/usr/lib/python3.14/dataclasses.py:506",
+      "size": 388256,
+      "count": 3258
+    },
+    {
+      "loc": "/usr/lib/python3.14/re/_compiler.py:778",
+      "size": 346640,
+      "count": 507
+    },
+    {
+      "loc": "/usr/lib/python3.14/enum.py:550",
+      "size": 291403,
+      "count": 794
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_EU.py:82",
+      "size": 283444,
+      "count": 3432
+    },
+    {
+      "loc": "/usr/lib/python3.14/annotationlib.py:267",
+      "size": 282985,
+      "count": 2685
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/_parsers/hiredis.py:48",
+      "size": 262372,
+      "count": 8
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:596",
+      "size": 236952,
+      "count": 1565
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:1420",
+      "size": 222312,
+      "count": 451
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:3159",
+      "size": 218619,
+      "count": 864
+    },
+    {
+      "loc": "<frozen abc>:107",
+      "size": 206144,
+      "count": 1124
+    },
+    {
+      "loc": "<frozen importlib._bootstrap>:49",
+      "size": 203760,
+      "count": 2996
+    },
+    {
+      "loc": "/usr/lib/python3.14/enum.py:262",
+      "size": 201928,
+      "count": 1174
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/jinja2/nodes.py:68",
+      "size": 170427,
+      "count": 572
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cssutils/profiles.py:174",
+      "size": 168631,
+      "count": 296
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:515",
+      "size": 162350,
+      "count": 719
+    },
+    {
+      "loc": "<frozen codecs>:1089",
+      "size": 158168,
+      "count": 34
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:958",
+      "size": 156640,
+      "count": 1200
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:1412",
+      "size": 151755,
+      "count": 2852
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:1353",
+      "size": 138512,
+      "count": 1536
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:1337",
+      "size": 118560,
+      "count": 1729
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/charset_normalizer/constant.py:2049",
+      "size": 118168,
+      "count": 83
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/lang/morph_en.py:601",
+      "size": 115757,
+      "count": 2409
+    },
+    {
+      "loc": "/usr/lib/python3.14/dataclasses.py:1361",
+      "size": 108805,
+      "count": 422
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/bs4/dammit.py:169",
+      "size": 96271,
+      "count": 2019
+    },
+    {
+      "loc": "<frozen importlib._bootstrap>:609",
+      "size": 86800,
+      "count": 1550
+    },
+    {
+      "loc": "/usr/lib/python3.14/functools.py:58",
+      "size": 86408,
+      "count": 1281
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_RU.py:117",
+      "size": 86354,
+      "count": 1269
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/base.py:66",
+      "size": 79760,
+      "count": 939
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/oauthlib/oauth2/rfc6749/clients/base.py:35",
+      "size": 77574,
+      "count": 12
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_EU.py:85",
+      "size": 77112,
+      "count": 1458
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/chardet/johabfreq.py:31",
+      "size": 73808,
+      "count": 2
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/html5lib/serializer.py:39",
+      "size": 73744,
+      "count": 1
+    },
+    {
+      "loc": "/usr/lib/python3.14/enum.py:254",
+      "size": 72016,
+      "count": 235
+    },
+    {
+      "loc": "<frozen abc>:123",
+      "size": 68874,
+      "count": 730
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:528",
+      "size": 65723,
+      "count": 778
+    },
+    {
+      "loc": "/usr/lib/python3.14/enum.py:1875",
+      "size": 65704,
+      "count": 382
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/charset_normalizer/constant.py:581",
+      "size": 64904,
+      "count": 534
+    },
+    {
+      "loc": "<frozen importlib._bootstrap>:652",
+      "size": 63468,
+      "count": 1184
+    },
+    {
+      "loc": "<string>:1",
+      "size": 63240,
+      "count": 637
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/utils/typing_validations.py:34",
+      "size": 63240,
+      "count": 510
+    },
+    {
+      "loc": "/usr/lib/python3.14/enum.py:822",
+      "size": 61088,
+      "count": 33
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:3257",
+      "size": 60280,
+      "count": 197
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:447",
+      "size": 58319,
+      "count": 616
+    },
+    {
+      "loc": "/usr/lib/python3.14/enum.py:256",
+      "size": 56019,
+      "count": 687
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:1346",
+      "size": 53352,
+      "count": 247
+    },
+    {
+      "loc": "/usr/lib/python3.14/html/entities.py:268",
+      "size": 52368,
+      "count": 3
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/bs4/dammit.py:182",
+      "size": 52024,
+      "count": 2
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/bs4/dammit.py:177",
+      "size": 52024,
+      "count": 2
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/html5lib/constants.py:650",
+      "size": 51968,
+      "count": 2
+    },
+    {
+      "loc": "<frozen importlib._bootstrap>:931",
+      "size": 51904,
+      "count": 1
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/lang/morph_en.py:602",
+      "size": 51904,
+      "count": 1
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_EN.py:27",
+      "size": 50612,
+      "count": 604
+    },
+    {
+      "loc": "/usr/lib/python3.14/enum.py:487",
+      "size": 49106,
+      "count": 155
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/routing/rules.py:837",
+      "size": 48340,
+      "count": 434
+    },
+    {
+      "loc": "<frozen abc>:24",
+      "size": 47408,
+      "count": 578
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:3260",
+      "size": 46632,
+      "count": 162
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pytz/__init__.py:205",
+      "size": 46030,
+      "count": 599
+    },
+    {
+      "loc": "<frozen importlib._bootstrap>:1350",
+      "size": 45344,
+      "count": 70
+    },
+    {
+      "loc": "/usr/lib/python3.14/base64.py:168",
+      "size": 44856,
+      "count": 1027
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/database/database.py:332",
+      "size": 44454,
+      "count": 826
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:3258",
+      "size": 44072,
+      "count": 153
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/charset_normalizer/constant.py:2043",
+      "size": 43120,
+      "count": 83
+    },
+    {
+      "loc": "/usr/lib/python3.14/dataclasses.py:411",
+      "size": 42752,
+      "count": 334
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/html5lib/serializer.py:36",
+      "size": 42144,
+      "count": 1317
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/__init__.py:444",
+      "size": 40800,
+      "count": 1020
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_SV.py:32",
+      "size": 39030,
+      "count": 302
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_EO.py:39",
+      "size": 38980,
+      "count": 302
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_NO.py:33",
+      "size": 38830,
+      "count": 302
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_FI.py:511",
+      "size": 38287,
+      "count": 402
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_FI.py:510",
+      "size": 38187,
+      "count": 402
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:399",
+      "size": 38128,
+      "count": 344
+    },
+    {
+      "loc": "/usr/lib/python3.14/re/__init__.py:339",
+      "size": 36504,
+      "count": 507
+    },
+    {
+      "loc": "/usr/lib/python3.14/urllib/parse.py:695",
+      "size": 35452,
+      "count": 486
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/client.py:104",
+      "size": 34893,
+      "count": 495
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pytz/lazy.py:155",
+      "size": 32768,
+      "count": 1
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:493",
+      "size": 32766,
+      "count": 545
+    },
+    {
+      "loc": "<string>:2",
+      "size": 31424,
+      "count": 236
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/cluster.py:2513",
+      "size": 31136,
+      "count": 278
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:2685",
+      "size": 30944,
+      "count": 400
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cssutils/css/cssproperties.py:140",
+      "size": 30912,
+      "count": 276
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cssutils/css/cssproperties.py:137",
+      "size": 30912,
+      "count": 276
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cssutils/css/cssproperties.py:134",
+      "size": 30912,
+      "count": 276
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/utils/typing_validations.py:33",
+      "size": 29880,
+      "count": 249
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypika/utils.py:51",
+      "size": 29696,
+      "count": 256
+    },
+    {
+      "loc": "/usr/lib/python3.14/enum.py:318",
+      "size": 29248,
+      "count": 83
+    },
+    {
+      "loc": "<frozen importlib._bootstrap_external>:1453",
+      "size": 28912,
+      "count": 247
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_AM.py:36",
+      "size": 28140,
+      "count": 299
+    },
+    {
+      "loc": "/usr/lib/python3.14/_sysconfigdata__linux_x86_64-linux-gnu.py:2",
+      "size": 26032,
+      "count": 2
+    },
+    {
+      "loc": "/usr/lib/python3.14/sysconfig/__init__.py:427",
+      "size": 25968,
+      "count": 1
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/MySQLdb/constants/ER.py:712",
+      "size": 25968,
+      "count": 1
+    },
+    {
+      "loc": "/usr/lib/python3.14/functools.py:595",
+      "size": 25288,
+      "count": 255
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_SV.py:35",
+      "size": 25202,
+      "count": 300
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_EO.py:42",
+      "size": 25151,
+      "count": 300
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_NO.py:36",
+      "size": 25102,
+      "count": 300
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:3228",
+      "size": 25080,
+      "count": 190
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/charset_normalizer/utils.py:92",
+      "size": 24984,
+      "count": 347
+    },
+    {
+      "loc": "/usr/lib/python3.14/dataclasses.py:511",
+      "size": 24444,
+      "count": 401
+    },
+    {
+      "loc": "/usr/lib/python3.14/reprlib.py:15",
+      "size": 22320,
+      "count": 186
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:513",
+      "size": 22080,
+      "count": 460
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/typing_inspection/typing_objects.py:101",
+      "size": 22046,
+      "count": 252
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:454",
+      "size": 21840,
+      "count": 182
+    },
+    {
+      "loc": "/usr/lib/python3.14/dataclasses.py:541",
+      "size": 21600,
+      "count": 180
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_RU.py:116",
+      "size": 21432,
+      "count": 376
+    },
+    {
+      "loc": "/usr/lib/python3.14/http/__init__.py:28",
+      "size": 21328,
+      "count": 124
+    },
+    {
+      "loc": "/usr/lib/python3.14/typing.py:3259",
+      "size": 21320,
+      "count": 97
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:476",
+      "size": 21112,
+      "count": 182
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:463",
+      "size": 21112,
+      "count": 182
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:480",
+      "size": 20384,
+      "count": 182
+    },
+    {
+      "loc": "/usr/lib/python3.14/collections/__init__.py:472",
+      "size": 20160,
+      "count": 180
+    },
+    {
+      "loc": "/usr/lib/python3.14/reprlib.py:13",
+      "size": 20088,
+      "count": 93
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cssutils/css/cssproperties.py:148",
+      "size": 19824,
+      "count": 277
+    },
+    {
+      "loc": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/local.py:293",
+      "size": 19600,
+      "count": 150
+    }
+  ],
+  "top_by_file": [
+    {
+      "file": "<frozen importlib._bootstrap_external>:0",
+      "size": 47049291,
+      "count": 419313
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/utils/redis_wrapper.py:0",
+      "size": 4292141,
+      "count": 25282
+    },
+    {
+      "file": "<frozen importlib._bootstrap>:0",
+      "size": 3037116,
+      "count": 31029
+    },
+    {
+      "file": "<frozen abc>:0",
+      "size": 1632144,
+      "count": 7096
+    },
+    {
+      "file": "/usr/lib/python3.14/typing.py:0",
+      "size": 1013100,
+      "count": 6288
+    },
+    {
+      "file": "/usr/lib/python3.14/enum.py:0",
+      "size": 993427,
+      "count": 5322
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_EU.py:0",
+      "size": 811594,
+      "count": 8317
+    },
+    {
+      "file": "/usr/lib/python3.14/logging/__init__.py:0",
+      "size": 795064,
+      "count": 880
+    },
+    {
+      "file": "/usr/lib/python3.14/dataclasses.py:0",
+      "size": 759188,
+      "count": 6539
+    },
+    {
+      "file": "/usr/lib/python3.14/collections/__init__.py:0",
+      "size": 474008,
+      "count": 4387
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/_codecs/adobe_glyphs.py:0",
+      "size": 426438,
+      "count": 244
+    },
+    {
+      "file": "/usr/lib/python3.14/re/_compiler.py:0",
+      "size": 353656,
+      "count": 566
+    },
+    {
+      "file": "/usr/lib/python3.14/annotationlib.py:0",
+      "size": 344542,
+      "count": 3180
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/charset_normalizer/constant.py:0",
+      "size": 282272,
+      "count": 1276
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/_parsers/hiredis.py:0",
+      "size": 268507,
+      "count": 63
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/bs4/dammit.py:0",
+      "size": 267655,
+      "count": 2213
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/routing/rules.py:0",
+      "size": 264315,
+      "count": 2762
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypika/terms.py:0",
+      "size": 247172,
+      "count": 1430
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/jinja2/nodes.py:0",
+      "size": 224124,
+      "count": 1096
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cssutils/profiles.py:0",
+      "size": 207688,
+      "count": 453
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/chardet/langrussianmodel.py:0",
+      "size": 201488,
+      "count": 141
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/lang/morph_en.py:0",
+      "size": 190906,
+      "count": 2606
+    },
+    {
+      "file": "/usr/lib/python3.14/functools.py:0",
+      "size": 182883,
+      "count": 2074
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_RU.py:0",
+      "size": 182364,
+      "count": 2679
+    },
+    {
+      "file": "<string>:0",
+      "size": 172512,
+      "count": 1679
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/chardet/langbulgarianmodel.py:0",
+      "size": 163904,
+      "count": 133
+    },
+    {
+      "file": "<frozen codecs>:0",
+      "size": 160856,
+      "count": 52
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/commands/core.py:0",
+      "size": 160718,
+      "count": 1225
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/chardet/langgreekmodel.py:0",
+      "size": 159376,
+      "count": 129
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/chardet/langturkishmodel.py:0",
+      "size": 154600,
+      "count": 131
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/chardet/langthaimodel.py:0",
+      "size": 154600,
+      "count": 131
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/chardet/langhebrewmodel.py:0",
+      "size": 154600,
+      "count": 131
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypika/dialects.py:0",
+      "size": 152990,
+      "count": 949
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypika/queries.py:0",
+      "size": 150828,
+      "count": 1083
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/__init__.py:0",
+      "size": 146467,
+      "count": 2130
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/columns.py:0",
+      "size": 146041,
+      "count": 586
+    },
+    {
+      "file": "/usr/lib/python3.14/unittest/mock.py:0",
+      "size": 142043,
+      "count": 640
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypika/functions.py:0",
+      "size": 139512,
+      "count": 606
+    },
+    {
+      "file": "/usr/lib/python3.14/ctypes/__init__.py:0",
+      "size": 136560,
+      "count": 636
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic/types.py:0",
+      "size": 131615,
+      "count": 661
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/bs4/element.py:0",
+      "size": 130701,
+      "count": 750
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/qparser/plugins.py:0",
+      "size": 129756,
+      "count": 476
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cssutils/css/cssproperties.py:0",
+      "size": 129026,
+      "count": 1326
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/html5lib/serializer.py:0",
+      "size": 123037,
+      "count": 1351
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/exceptions.py:0",
+      "size": 122108,
+      "count": 641
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic_core/core_schema.py:0",
+      "size": 118687,
+      "count": 1286
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/utils/typing_validations.py:0",
+      "size": 114476,
+      "count": 1082
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/soupsieve/css_parser.py:0",
+      "size": 113852,
+      "count": 1001
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/connection.py:0",
+      "size": 113653,
+      "count": 680
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic/networks.py:0",
+      "size": 113179,
+      "count": 565
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/cluster.py:0",
+      "size": 111364,
+      "count": 857
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/base.py:0",
+      "size": 107820,
+      "count": 1344
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/num2words/lang_FI.py:0",
+      "size": 106394,
+      "count": 1086
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/client.py:0",
+      "size": 105123,
+      "count": 973
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/html5lib/constants.py:0",
+      "size": 105115,
+      "count": 236
+    },
+    {
+      "file": "/usr/lib/python3.14/argparse.py:0",
+      "size": 102971,
+      "count": 454
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/_codecs/core_font_metrics.py:0",
+      "size": 101280,
+      "count": 61
+    },
+    {
+      "file": "/usr/lib/python3.14/ipaddress.py:0",
+      "size": 98370,
+      "count": 732
+    },
+    {
+      "file": "/usr/lib/python3.14/importlib/metadata/__init__.py:0",
+      "size": 97800,
+      "count": 849
+    },
+    {
+      "file": "/usr/lib/python3.14/xml/dom/minidom.py:0",
+      "size": 96111,
+      "count": 478
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/click/core.py:0",
+      "size": 90859,
+      "count": 405
+    },
+    {
+      "file": "/usr/lib/python3.14/urllib/parse.py:0",
+      "size": 89837,
+      "count": 820
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/typing_extensions.py:0",
+      "size": 89537,
+      "count": 338
+    },
+    {
+      "file": "/usr/lib/python3.14/urllib/request.py:0",
+      "size": 88544,
+      "count": 374
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/filetype/types/archive.py:0",
+      "size": 86472,
+      "count": 383
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/datastructures/structures.py:0",
+      "size": 86058,
+      "count": 506
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/database/database.py:0",
+      "size": 85650,
+      "count": 1077
+    },
+    {
+      "file": "/usr/lib/python3.14/html/entities.py:0",
+      "size": 84032,
+      "count": 163
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/constants.py:0",
+      "size": 83794,
+      "count": 375
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/exceptions.py:0",
+      "size": 83185,
+      "count": 401
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pytz/lazy.py:0",
+      "size": 82025,
+      "count": 307
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/oauthlib/oauth2/rfc6749/clients/base.py:0",
+      "size": 81926,
+      "count": 36
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/fields.py:0",
+      "size": 81777,
+      "count": 342
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/more_itertools/more.py:0",
+      "size": 80860,
+      "count": 363
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/click/types.py:0",
+      "size": 80028,
+      "count": 359
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/local.py:0",
+      "size": 78155,
+      "count": 626
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/urllib3/exceptions.py:0",
+      "size": 77072,
+      "count": 439
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/six.py:0",
+      "size": 76725,
+      "count": 450
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/query/spans.py:0",
+      "size": 76564,
+      "count": 320
+    },
+    {
+      "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/jinja2/compiler.py:0",
+      "size": 76049,
+      "count": 529
+    }
+  ],
+  "by_package": [
+    {
+      "pkg": "<frozen importlib._bootstrap_external>:0",
+      "MB": 44.87,
+      "count": 419313
+    },
+    {
+      "pkg": "frappe",
+      "MB": 6.366,
+      "count": 40591
+    },
+    {
+      "pkg": "<frozen importlib._bootstrap>:0",
+      "MB": 2.896,
+      "count": 31029
+    },
+    {
+      "pkg": "num2words",
+      "MB": 1.789,
+      "count": 18554
+    },
+    {
+      "pkg": "<frozen abc>:0",
+      "MB": 1.557,
+      "count": 7096
+    },
+    {
+      "pkg": "redis",
+      "MB": 1.512,
+      "count": 8984
+    },
+    {
+      "pkg": "whoosh",
+      "MB": 1.415,
+      "count": 8402
+    },
+    {
+      "pkg": "stdlib:encodings",
+      "MB": 1.369,
+      "count": 5142
+    },
+    {
+      "pkg": "chardet",
+      "MB": 1.201,
+      "count": 1878
+    },
+    {
+      "pkg": "pypdf",
+      "MB": 1.173,
+      "count": 4911
+    },
+    {
+      "pkg": "werkzeug",
+      "MB": 1.114,
+      "count": 8184
+    },
+    {
+      "pkg": "stdlib:typing.py",
+      "MB": 0.966,
+      "count": 6288
+    },
+    {
+      "pkg": "stdlib:enum.py",
+      "MB": 0.947,
+      "count": 5322
+    },
+    {
+      "pkg": "pydantic",
+      "MB": 0.816,
+      "count": 4681
+    },
+    {
+      "pkg": "stdlib:logging",
+      "MB": 0.81,
+      "count": 1098
+    },
+    {
+      "pkg": "stdlib:dataclasses.py",
+      "MB": 0.724,
+      "count": 6539
+    },
+    {
+      "pkg": "pypika",
+      "MB": 0.72,
+      "count": 4501
+    },
+    {
+      "pkg": "jinja2",
+      "MB": 0.699,
+      "count": 4190
+    },
+    {
+      "pkg": "cssutils",
+      "MB": 0.689,
+      "count": 3766
+    },
+    {
+      "pkg": "bs4",
+      "MB": 0.596,
+      "count": 4198
+    },
+    {
+      "pkg": "stdlib:collections",
+      "MB": 0.452,
+      "count": 4387
+    },
+    {
+      "pkg": "stdlib:re",
+      "MB": 0.432,
+      "count": 1480
+    },
+    {
+      "pkg": "oauthlib",
+      "MB": 0.4,
+      "count": 1381
+    },
+    {
+      "pkg": "stdlib:asyncio",
+      "MB": 0.361,
+      "count": 1909
+    },
+    {
+      "pkg": "charset_normalizer",
+      "MB": 0.352,
+      "count": 2073
+    },
+    {
+      "pkg": "rq",
+      "MB": 0.333,
+      "count": 2080
+    },
+    {
+      "pkg": "stdlib:annotationlib.py",
+      "MB": 0.329,
+      "count": 3180
+    },
+    {
+      "pkg": "urllib3",
+      "MB": 0.326,
+      "count": 1744
+    },
+    {
+      "pkg": "stdlib:xml",
+      "MB": 0.325,
+      "count": 1694
+    },
+    {
+      "pkg": "html5lib",
+      "MB": 0.323,
+      "count": 2017
+    },
+    {
+      "pkg": "cryptography",
+      "MB": 0.303,
+      "count": 1681
+    },
+    {
+      "pkg": "yaml",
+      "MB": 0.289,
+      "count": 1474
+    },
+    {
+      "pkg": "click",
+      "MB": 0.286,
+      "count": 1441
+    },
+    {
+      "pkg": "filetype",
+      "MB": 0.276,
+      "count": 1231
+    },
+    {
+      "pkg": "stdlib:unittest",
+      "MB": 0.251,
+      "count": 1228
+    },
+    {
+      "pkg": "soupsieve",
+      "MB": 0.236,
+      "count": 2263
+    },
+    {
+      "pkg": "passlib",
+      "MB": 0.233,
+      "count": 1443
+    },
+    {
+      "pkg": "PIL",
+      "MB": 0.216,
+      "count": 1278
+    },
+    {
+      "pkg": "stdlib:urllib",
+      "MB": 0.202,
+      "count": 1370
+    },
+    {
+      "pkg": "stdlib:http",
+      "MB": 0.193,
+      "count": 1225
+    },
+    {
+      "pkg": "sqlparse",
+      "MB": 0.186,
+      "count": 942
+    },
+    {
+      "pkg": "stdlib:importlib",
+      "MB": 0.184,
+      "count": 1550
+    },
+    {
+      "pkg": "stdlib:email",
+      "MB": 0.177,
+      "count": 1114
+    },
+    {
+      "pkg": "stdlib:functools.py",
+      "MB": 0.174,
+      "count": 2074
+    },
+    {
+      "pkg": "pytz",
+      "MB": 0.172,
+      "count": 1126
+    },
+    {
+      "pkg": "requests",
+      "MB": 0.172,
+      "count": 915
+    },
+    {
+      "pkg": "<string>:0",
+      "MB": 0.165,
+      "count": 1679
+    },
+    {
+      "pkg": "babel",
+      "MB": 0.161,
+      "count": 973
+    },
+    {
+      "pkg": "<frozen codecs>:0",
+      "MB": 0.153,
+      "count": 52
+    },
+    {
+      "pkg": "pymysql",
+      "MB": 0.153,
+      "count": 688
+    },
+    {
+      "pkg": "dateutil",
+      "MB": 0.15,
+      "count": 831
+    },
+    {
+      "pkg": "stdlib:ctypes",
+      "MB": 0.141,
+      "count": 697
+    },
+    {
+      "pkg": "psutil",
+      "MB": 0.122,
+      "count": 1089
+    },
+    {
+      "pkg": "pydantic_core",
+      "MB": 0.118,
+      "count": 1334
+    },
+    {
+      "pkg": "tenacity",
+      "MB": 0.107,
+      "count": 805
+    },
+    {
+      "pkg": "more_itertools",
+      "MB": 0.104,
+      "count": 466
+    },
+    {
+      "pkg": "stdlib:html",
+      "MB": 0.099,
+      "count": 219
+    },
+    {
+      "pkg": "stdlib:argparse.py",
+      "MB": 0.098,
+      "count": 454
+    },
+    {
+      "pkg": "posthog",
+      "MB": 0.096,
+      "count": 595
+    },
+    {
+      "pkg": "stdlib:ipaddress.py",
+      "MB": 0.094,
+      "count": 732
+    }
+  ]
+}

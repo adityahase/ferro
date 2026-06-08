@@ -1,0 +1,800 @@
+{
+  "tag": "bare",
+  "pid": 168185,
+  "rollup_kib": {
+    "Rss": 12284,
+    "Pss": 9477,
+    "Pss_Anon": 4992,
+    "Pss_File": 4485,
+    "Shared_Clean": 2992,
+    "Shared_Dirty": 0,
+    "Private_Clean": 4300,
+    "Private_Dirty": 4992,
+    "Referenced": 12284,
+    "Anonymous": 4992,
+    "AnonHugePages": 0,
+    "Swap": 0,
+    "Locked": 0,
+    "USS": 9292,
+    "RSS": 12284,
+    "PSS": 9477
+  },
+  "gc": {
+    "get_count": [
+      1,
+      0,
+      0
+    ],
+    "get_stats": [
+      {
+        "collections": 0,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "collections": 0,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "collections": 2,
+        "collected": 133,
+        "uncollectable": 0
+      }
+    ],
+    "n_tracked": 8821,
+    "n_modules": 64,
+    "thresholds": [
+      2000,
+      10,
+      0
+    ]
+  },
+  "census": {
+    "totals": {
+      "n_objects": 20464,
+      "total_bytes": 3380285,
+      "truncated": false
+    },
+    "top_by_size": [
+      {
+        "type": "str",
+        "bytes": 624445,
+        "count": 8418
+      },
+      {
+        "type": "dict",
+        "bytes": 581144,
+        "count": 1213
+      },
+      {
+        "type": "code",
+        "bytes": 480440,
+        "count": 1134
+      },
+      {
+        "type": "type",
+        "bytes": 428344,
+        "count": 496
+      },
+      {
+        "type": "BufferedWriter",
+        "bytes": 262480,
+        "count": 2
+      },
+      {
+        "type": "function",
+        "bytes": 189000,
+        "count": 1125
+      },
+      {
+        "type": "BufferedReader",
+        "bytes": 131240,
+        "count": 1
+      },
+      {
+        "type": "tuple",
+        "bytes": 97768,
+        "count": 1434
+      },
+      {
+        "type": "wrapper_descriptor",
+        "bytes": 81360,
+        "count": 1130
+      },
+      {
+        "type": "ABCMeta",
+        "bytes": 67720,
+        "count": 55
+      },
+      {
+        "type": "method_descriptor",
+        "bytes": 59976,
+        "count": 833
+      },
+      {
+        "type": "builtin_function_or_method",
+        "bytes": 55656,
+        "count": 773
+      },
+      {
+        "type": "ReferenceType",
+        "bytes": 52400,
+        "count": 655
+      },
+      {
+        "type": "set",
+        "bytes": 45296,
+        "count": 58
+      },
+      {
+        "type": "frozenset",
+        "bytes": 42880,
+        "count": 112
+      },
+      {
+        "type": "int",
+        "bytes": 30036,
+        "count": 1069
+      },
+      {
+        "type": "getset_descriptor",
+        "bytes": 24896,
+        "count": 389
+      },
+      {
+        "type": "list",
+        "bytes": 23104,
+        "count": 165
+      },
+      {
+        "type": "member_descriptor",
+        "bytes": 20480,
+        "count": 320
+      },
+      {
+        "type": "EnumType",
+        "bytes": 15480,
+        "count": 9
+      },
+      {
+        "type": "bytes",
+        "bytes": 12436,
+        "count": 210
+      },
+      {
+        "type": "GenericAlias",
+        "bytes": 5920,
+        "count": 74
+      },
+      {
+        "type": "module",
+        "bytes": 4608,
+        "count": 64
+      },
+      {
+        "type": "_NamedIntConstant",
+        "bytes": 4564,
+        "count": 76
+      },
+      {
+        "type": "classmethod_descriptor",
+        "bytes": 4176,
+        "count": 58
+      },
+      {
+        "type": "_abc_data",
+        "bytes": 3584,
+        "count": 56
+      },
+      {
+        "type": "slice",
+        "bytes": 3472,
+        "count": 62
+      },
+      {
+        "type": "classmethod",
+        "bytes": 3264,
+        "count": 68
+      },
+      {
+        "type": "Union",
+        "bytes": 2952,
+        "count": 41
+      },
+      {
+        "type": "ModuleSpec",
+        "bytes": 2928,
+        "count": 61
+      },
+      {
+        "type": "Pattern",
+        "bytes": 1820,
+        "count": 7
+      },
+      {
+        "type": "cell",
+        "bytes": 1800,
+        "count": 45
+      },
+      {
+        "type": "staticmethod",
+        "bytes": 1680,
+        "count": 35
+      },
+      {
+        "type": "property",
+        "bytes": 1472,
+        "count": 20
+      },
+      {
+        "type": "SourceFileLoader",
+        "bytes": 1248,
+        "count": 26
+      },
+      {
+        "type": "_DeprecateByteStringMeta",
+        "bytes": 952,
+        "count": 1
+      },
+      {
+        "type": "RegexFlag",
+        "bytes": 660,
+        "count": 11
+      },
+      {
+        "type": "TextIOWrapper",
+        "bytes": 648,
+        "count": 3
+      },
+      {
+        "type": "SimpleNamespace",
+        "bytes": 600,
+        "count": 15
+      },
+      {
+        "type": "FlagBoundary",
+        "bytes": 410,
+        "count": 4
+      },
+      {
+        "type": "builtin_method",
+        "bytes": 400,
+        "count": 5
+      },
+      {
+        "type": "float",
+        "bytes": 384,
+        "count": 16
+      },
+      {
+        "type": "FileFinder",
+        "bytes": 384,
+        "count": 8
+      },
+      {
+        "type": "EnumCheck",
+        "bytes": 382,
+        "count": 3
+      },
+      {
+        "type": "timedelta",
+        "bytes": 240,
+        "count": 6
+      },
+      {
+        "type": "flags",
+        "bytes": 216,
+        "count": 1
+      },
+      {
+        "type": "FileIO",
+        "bytes": 192,
+        "count": 3
+      },
+      {
+        "type": "_tuplegetter",
+        "bytes": 192,
+        "count": 4
+      },
+      {
+        "type": "CodecInfo",
+        "bytes": 192,
+        "count": 2
+      },
+      {
+        "type": "_lru_cache_wrapper",
+        "bytes": 168,
+        "count": 1
+      },
+      {
+        "type": "object",
+        "bytes": 160,
+        "count": 10
+      },
+      {
+        "type": "_Printer",
+        "bytes": 144,
+        "count": 3
+      },
+      {
+        "type": "float_info",
+        "bytes": 136,
+        "count": 1
+      },
+      {
+        "type": "method",
+        "bytes": 128,
+        "count": 2
+      },
+      {
+        "type": "hash_info",
+        "bytes": 120,
+        "count": 1
+      },
+      {
+        "type": "_Environ",
+        "bytes": 96,
+        "count": 2
+      },
+      {
+        "type": "IncrementalEncoder",
+        "bytes": 96,
+        "count": 2
+      },
+      {
+        "type": "Quitter",
+        "bytes": 96,
+        "count": 2
+      },
+      {
+        "type": "timezone",
+        "bytes": 96,
+        "count": 3
+      },
+      {
+        "type": "datetime",
+        "bytes": 96,
+        "count": 2
+      },
+      {
+        "type": "version_info",
+        "bytes": 88,
+        "count": 1
+      },
+      {
+        "type": "ContextVar",
+        "bytes": 80,
+        "count": 1
+      },
+      {
+        "type": "int_info",
+        "bytes": 80,
+        "count": 1
+      },
+      {
+        "type": "Scanner",
+        "bytes": 80,
+        "count": 1
+      },
+      {
+        "type": "time",
+        "bytes": 80,
+        "count": 2
+      },
+      {
+        "type": "thread_info",
+        "bytes": 72,
+        "count": 1
+      },
+      {
+        "type": "date",
+        "bytes": 64,
+        "count": 2
+      },
+      {
+        "type": "_ZeroSentinel",
+        "bytes": 60,
+        "count": 1
+      },
+      {
+        "type": "bool",
+        "bytes": 56,
+        "count": 2
+      },
+      {
+        "type": "NotIn",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "In",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "IsNot",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "Is",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "GtE",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "Gt",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "LtE",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "Lt",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "NotEq",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "Eq",
+        "bytes": 56,
+        "count": 1
+      },
+      {
+        "type": "USub",
+        "bytes": 56,
+        "count": 1
+      }
+    ]
+  },
+  "code_by_file": {
+    "total_code_bytes": 480440,
+    "n_files": 34,
+    "top_files": [
+      {
+        "file": "/usr/lib/python3.14/collections/__init__.py",
+        "bytes": 56168,
+        "n_code_objs": 171
+      },
+      {
+        "file": "/usr/lib/python3.14/enum.py",
+        "bytes": 52080,
+        "n_code_objs": 98
+      },
+      {
+        "file": "<frozen importlib._bootstrap_external>",
+        "bytes": 41584,
+        "n_code_objs": 104
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "bytes": 39264,
+        "n_code_objs": 85
+      },
+      {
+        "file": "<frozen _collections_abc>",
+        "bytes": 32640,
+        "n_code_objs": 111
+      },
+      {
+        "file": "/usr/lib/python3.14/re/_parser.py",
+        "bytes": 31200,
+        "n_code_objs": 38
+      },
+      {
+        "file": "<frozen codecs>",
+        "bytes": 26984,
+        "n_code_objs": 89
+      },
+      {
+        "file": "<frozen os>",
+        "bytes": 22624,
+        "n_code_objs": 59
+      },
+      {
+        "file": "<frozen site>",
+        "bytes": 19368,
+        "n_code_objs": 30
+      },
+      {
+        "file": "/usr/lib/python3.14/functools.py",
+        "bytes": 19264,
+        "n_code_objs": 46
+      },
+      {
+        "file": "/usr/lib/python3.14/contextlib.py",
+        "bytes": 18568,
+        "n_code_objs": 59
+      },
+      {
+        "file": "/usr/lib/python3.14/re/_compiler.py",
+        "bytes": 16536,
+        "n_code_objs": 21
+      },
+      {
+        "file": "<frozen zipimport>",
+        "bytes": 16344,
+        "n_code_objs": 26
+      },
+      {
+        "file": "<frozen posixpath>",
+        "bytes": 10560,
+        "n_code_objs": 16
+      },
+      {
+        "file": "/usr/lib/python3.14/types.py",
+        "bytes": 8328,
+        "n_code_objs": 24
+      },
+      {
+        "file": "/usr/lib/python3.14/reprlib.py",
+        "bytes": 8128,
+        "n_code_objs": 18
+      },
+      {
+        "file": "/home/frappe/runtime-memory-investigation/granular/scripts/introspect.py",
+        "bytes": 7752,
+        "n_code_objs": 11
+      },
+      {
+        "file": "/usr/lib/python3.14/re/__init__.py",
+        "bytes": 6848,
+        "n_code_objs": 16
+      },
+      {
+        "file": "<frozen genericpath>",
+        "bytes": 6304,
+        "n_code_objs": 19
+      },
+      {
+        "file": "/usr/lib/python3.14/json/decoder.py",
+        "bytes": 6040,
+        "n_code_objs": 9
+      },
+      {
+        "file": "/usr/lib/python3.14/encodings/utf_8_sig.py",
+        "bytes": 5856,
+        "n_code_objs": 17
+      },
+      {
+        "file": "/usr/lib/python3.14/copyreg.py",
+        "bytes": 5560,
+        "n_code_objs": 13
+      },
+      {
+        "file": "<frozen abc>",
+        "bytes": 3360,
+        "n_code_objs": 11
+      },
+      {
+        "file": "<frozen _sitebuiltins>",
+        "bytes": 3120,
+        "n_code_objs": 9
+      },
+      {
+        "file": "/usr/lib/python3.14/json/encoder.py",
+        "bytes": 3024,
+        "n_code_objs": 7
+      },
+      {
+        "file": "/usr/lib/python3.14/json/__init__.py",
+        "bytes": 2856,
+        "n_code_objs": 5
+      },
+      {
+        "file": "/usr/lib/python3.14/encodings/__init__.py",
+        "bytes": 2560,
+        "n_code_objs": 2
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/_virtualenv.py",
+        "bytes": 1856,
+        "n_code_objs": 4
+      },
+      {
+        "file": "/usr/lib/python3.14/re/_constants.py",
+        "bytes": 1528,
+        "n_code_objs": 4
+      },
+      {
+        "file": "/home/frappe/runtime-memory-investigation/granular/scripts/stage_run.py",
+        "bytes": 1496,
+        "n_code_objs": 3
+      },
+      {
+        "file": "<frozen io>",
+        "bytes": 976,
+        "n_code_objs": 4
+      },
+      {
+        "file": "/usr/lib/python3.14/encodings/utf_8.py",
+        "bytes": 864,
+        "n_code_objs": 3
+      },
+      {
+        "file": "/usr/lib/python3.14/json/scanner.py",
+        "bytes": 560,
+        "n_code_objs": 1
+      },
+      {
+        "file": "<string>",
+        "bytes": 240,
+        "n_code_objs": 1
+      }
+    ]
+  },
+  "top_packages": [
+    [
+      "re",
+      5
+    ],
+    [
+      "encodings",
+      4
+    ],
+    [
+      "json",
+      4
+    ],
+    [
+      "os",
+      2
+    ],
+    [
+      "collections",
+      2
+    ],
+    [
+      "sys",
+      1
+    ],
+    [
+      "builtins",
+      1
+    ],
+    [
+      "_frozen_importlib",
+      1
+    ],
+    [
+      "_imp",
+      1
+    ],
+    [
+      "_thread",
+      1
+    ],
+    [
+      "_warnings",
+      1
+    ],
+    [
+      "_weakref",
+      1
+    ],
+    [
+      "_io",
+      1
+    ],
+    [
+      "marshal",
+      1
+    ],
+    [
+      "posix",
+      1
+    ],
+    [
+      "_frozen_importlib_external",
+      1
+    ],
+    [
+      "time",
+      1
+    ],
+    [
+      "zipimport",
+      1
+    ],
+    [
+      "_codecs",
+      1
+    ],
+    [
+      "codecs",
+      1
+    ],
+    [
+      "_signal",
+      1
+    ],
+    [
+      "__main__",
+      1
+    ],
+    [
+      "_abc",
+      1
+    ],
+    [
+      "abc",
+      1
+    ],
+    [
+      "_stat",
+      1
+    ],
+    [
+      "stat",
+      1
+    ],
+    [
+      "_collections_abc",
+      1
+    ],
+    [
+      "errno",
+      1
+    ],
+    [
+      "genericpath",
+      1
+    ],
+    [
+      "posixpath",
+      1
+    ],
+    [
+      "_sitebuiltins",
+      1
+    ],
+    [
+      "_virtualenv",
+      1
+    ],
+    [
+      "sitecustomize",
+      1
+    ],
+    [
+      "site",
+      1
+    ],
+    [
+      "gc",
+      1
+    ],
+    [
+      "io",
+      1
+    ],
+    [
+      "_types",
+      1
+    ],
+    [
+      "types",
+      1
+    ],
+    [
+      "enum",
+      1
+    ],
+    [
+      "_sre",
+      1
+    ]
+  ]
+}

@@ -1,0 +1,66 @@
+module,import_stmt,peak_rss_kib_min_of_3,status
+bare,pass,9644,ok
+orjson,import orjson,13480,ok
+werkzeug,from werkzeug.datastructures import Headers,28104,ok
+jinja2,import jinja2,23548,ok
+markupsafe,import markupsafe,11568,ok
+pyyaml,import yaml,12764,ok
+pydantic,import pydantic,18736,ok
+pydantic_core,import pydantic_core,17940,ok
+typing_extensions,import typing_extensions,13868,ok
+cryptography,from cryptography.hazmat.primitives.asymmetric import rsa,19512,ok
+pyopenssl,from OpenSSL import SSL,31104,ok
+passlib,from passlib.context import CryptContext,20424,ok
+pyjwt,import jwt,32536,ok
+rsa,import rsa,17576,ok
+pyotp,import pyotp,18396,ok
+ldap3,import ldap3,27744,ok
+oauthlib,import oauthlib,14192,ok
+zxcvbn,import zxcvbn,23872,ok
+lxml,import lxml.etree,18540,ok
+bs4,import bs4,36380,ok
+html5lib,import html5lib,24124,ok
+cssutils,import cssutils,28384,ok
+premailer,import premailer,44396,ok
+markdown2,import markdown2,20912,ok
+markdownify,import markdownify,36572,ok
+nh3,import nh3,11704,ok
+pillow,from PIL import Image,18364,ok
+pymysql,import pymysql,30296,ok
+mysqlclient,import MySQLdb,17580,ok
+psycopg2,import psycopg2,21604,ok
+sqlparse,import sqlparse,13068,ok
+sql_metadata,import sql_metadata,15660,ok
+pypika,import pypika,15152,ok
+redis,import redis,31784,ok
+hiredis,import hiredis,9880,ok
+rq,import rq,34752,ok
+requests,import requests,35476,ok
+urllib3,import urllib3,26512,ok
+websockets,import websockets,16140,ok
+babel,import babel,13144,ok
+pytz,import pytz,11068,ok
+dateutil,from dateutil import parser,13724,ok
+faker,from faker import Faker; Faker(),28976,ok
+phonenumbers,import phonenumbers,12756,ok
+pycountry,import pycountry,19480,ok
+num2words,import num2words,15052,ok
+croniter,import croniter,16368,ok
+openpyxl,import openpyxl,35444,ok
+pypdf,import pypdf,38836,ok
+xlsxwriter,import xlsxwriter,22924,ok
+xlrd,import xlrd,14620,ok
+googleapiclient,from googleapiclient.discovery import build,49360,ok
+google_auth,import google.auth,22724,ok
+requests_oauthlib,import requests_oauthlib,36880,ok
+sentry_sdk,import sentry_sdk,32500,ok
+posthog,import posthog,40600,ok
+ipython,import IPython,56368,ok
+restrictedpython,import RestrictedPython,12688,ok
+semantic_version,import semantic_version,18040,ok
+tenacity,import tenacity,15892,ok
+gitpython,import git,26544,ok
+psutil,import psutil,13680,ok
+import_frappe,import frappe,60436,ok
+chardet,import chardet,17156,ok
+charset_normalizer,import charset_normalizer,19164,ok

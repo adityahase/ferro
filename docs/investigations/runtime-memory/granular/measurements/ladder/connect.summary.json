@@ -1,0 +1,1230 @@
+{
+  "tag": "connect",
+  "pid": 168194,
+  "rollup_kib": {
+    "Rss": 121332,
+    "Pss": 113744,
+    "Pss_Anon": 90084,
+    "Pss_File": 23660,
+    "Shared_Clean": 10116,
+    "Shared_Dirty": 0,
+    "Private_Clean": 21132,
+    "Private_Dirty": 90084,
+    "Referenced": 121332,
+    "Anonymous": 90084,
+    "AnonHugePages": 0,
+    "Swap": 0,
+    "Locked": 0,
+    "USS": 111216,
+    "RSS": 121332,
+    "PSS": 113744
+  },
+  "gc": {
+    "get_count": [
+      1,
+      0,
+      0
+    ],
+    "get_stats": [
+      {
+        "collections": 0,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "collections": 10,
+        "collected": 713,
+        "uncollectable": 0
+      },
+      {
+        "collections": 2,
+        "collected": 116,
+        "uncollectable": 0
+      }
+    ],
+    "n_tracked": 131162,
+    "n_modules": 1623,
+    "thresholds": [
+      20000,
+      20,
+      0
+    ]
+  },
+  "census": {
+    "totals": {
+      "n_objects": 388854,
+      "total_bytes": 64126565,
+      "truncated": false
+    },
+    "top_by_size": [
+      {
+        "type": "code",
+        "bytes": 14782152,
+        "count": 37526
+      },
+      {
+        "type": "str",
+        "bytes": 13015277,
+        "count": 152343
+      },
+      {
+        "type": "dict",
+        "bytes": 10816424,
+        "count": 17093
+      },
+      {
+        "type": "function",
+        "bytes": 6599040,
+        "count": 39280
+      },
+      {
+        "type": "type",
+        "bytes": 6450752,
+        "count": 4721
+      },
+      {
+        "type": "tuple",
+        "bytes": 2740232,
+        "count": 36151
+      },
+      {
+        "type": "int",
+        "bytes": 1774564,
+        "count": 47761
+      },
+      {
+        "type": "frozenset",
+        "bytes": 695864,
+        "count": 1573
+      },
+      {
+        "type": "BufferedWriter",
+        "bytes": 656200,
+        "count": 5
+      },
+      {
+        "type": "set",
+        "bytes": 630352,
+        "count": 1214
+      },
+      {
+        "type": "list",
+        "bytes": 626680,
+        "count": 5685
+      },
+      {
+        "type": "ABCMeta",
+        "bytes": 618024,
+        "count": 387
+      },
+      {
+        "type": "ReferenceType",
+        "bytes": 474880,
+        "count": 5936
+      },
+      {
+        "type": "OrderedDict",
+        "bytes": 426288,
+        "count": 47
+      },
+      {
+        "type": "Pattern",
+        "bytes": 332768,
+        "count": 484
+      },
+      {
+        "type": "cell",
+        "bytes": 259000,
+        "count": 6475
+      },
+      {
+        "type": "getset_descriptor",
+        "bytes": 251968,
+        "count": 3937
+      },
+      {
+        "type": "_ProtocolMeta",
+        "bytes": 242672,
+        "count": 146
+      },
+      {
+        "type": "EnumType",
+        "bytes": 228760,
+        "count": 133
+      },
+      {
+        "type": "_TypedDictMeta",
+        "bytes": 175440,
+        "count": 102
+      },
+      {
+        "type": "builtin_function_or_method",
+        "bytes": 138600,
+        "count": 1925
+      },
+      {
+        "type": "wrapper_descriptor",
+        "bytes": 134640,
+        "count": 1870
+      },
+      {
+        "type": "method_descriptor",
+        "bytes": 133776,
+        "count": 1858
+      },
+      {
+        "type": "bytearray",
+        "bytes": 131261,
+        "count": 3
+      },
+      {
+        "type": "BufferedReader",
+        "bytes": 131240,
+        "count": 1
+      },
+      {
+        "type": "property",
+        "bytes": 124112,
+        "count": 1553
+      },
+      {
+        "type": "module",
+        "bytes": 112680,
+        "count": 1565
+      },
+      {
+        "type": "ForwardRef",
+        "bytes": 107168,
+        "count": 788
+      },
+      {
+        "type": "bytes",
+        "bytes": 86067,
+        "count": 2174
+      },
+      {
+        "type": "member_descriptor",
+        "bytes": 73920,
+        "count": 1155
+      },
+      {
+        "type": "ModuleSpec",
+        "bytes": 73584,
+        "count": 1533
+      },
+      {
+        "type": "SourceFileLoader",
+        "bytes": 68112,
+        "count": 1419
+      },
+      {
+        "type": "LazySet",
+        "bytes": 66000,
+        "count": 2
+      },
+      {
+        "type": "cython_function_or_method",
+        "bytes": 62000,
+        "count": 311
+      },
+      {
+        "type": "Field",
+        "bytes": 41984,
+        "count": 328
+      },
+      {
+        "type": "slice",
+        "bytes": 36344,
+        "count": 649
+      },
+      {
+        "type": "PyCSimpleType",
+        "bytes": 35330,
+        "count": 31
+      },
+      {
+        "type": "_abc_data",
+        "bytes": 34816,
+        "count": 544
+      },
+      {
+        "type": "classmethod",
+        "bytes": 33600,
+        "count": 700
+      },
+      {
+        "type": "staticmethod",
+        "bytes": 28656,
+        "count": 597
+      },
+      {
+        "type": "_lru_list_elem",
+        "bytes": 22400,
+        "count": 400
+      },
+      {
+        "type": "_tuplegetter",
+        "bytes": 21696,
+        "count": 452
+      },
+      {
+        "type": "Selector",
+        "bytes": 19312,
+        "count": 142
+      },
+      {
+        "type": "Weighting",
+        "bytes": 17200,
+        "count": 215
+      },
+      {
+        "type": "Union",
+        "bytes": 16848,
+        "count": 234
+      },
+      {
+        "type": "_lru_cache_wrapper",
+        "bytes": 16800,
+        "count": 100
+      },
+      {
+        "type": "range",
+        "bytes": 16656,
+        "count": 347
+      },
+      {
+        "type": "Base",
+        "bytes": 16140,
+        "count": 269
+      },
+      {
+        "type": "SelectorList",
+        "bytes": 15920,
+        "count": 199
+      },
+      {
+        "type": "GenericAlias",
+        "bytes": 15440,
+        "count": 193
+      },
+      {
+        "type": "TypeVar",
+        "bytes": 14784,
+        "count": 132
+      },
+      {
+        "type": "PosixPath",
+        "bytes": 13936,
+        "count": 134
+      },
+      {
+        "type": "PyCapsule",
+        "bytes": 13840,
+        "count": 173
+      },
+      {
+        "type": "TagInfo",
+        "bytes": 13288,
+        "count": 151
+      },
+      {
+        "type": "method",
+        "bytes": 13184,
+        "count": 206
+      },
+      {
+        "type": "ObjectIdentifier",
+        "bytes": 12880,
+        "count": 161
+      },
+      {
+        "type": "float",
+        "bytes": 11976,
+        "count": 499
+      },
+      {
+        "type": "RulePart",
+        "bytes": 10896,
+        "count": 227
+      },
+      {
+        "type": "LazyRegex",
+        "bytes": 10656,
+        "count": 148
+      },
+      {
+        "type": "_DataclassParams",
+        "bytes": 10304,
+        "count": 92
+      },
+      {
+        "type": "defaultdict",
+        "bytes": 10264,
+        "count": 47
+      },
+      {
+        "type": "FileFinder",
+        "bytes": 10224,
+        "count": 213
+      },
+      {
+        "type": "LazyList",
+        "bytes": 9168,
+        "count": 2
+      },
+      {
+        "type": "PyCFuncPtrType",
+        "bytes": 9116,
+        "count": 8
+      },
+      {
+        "type": "SystemRandom",
+        "bytes": 7656,
+        "count": 3
+      },
+      {
+        "type": "Struct",
+        "bytes": 7120,
+        "count": 46
+      },
+      {
+        "type": "Charset",
+        "bytes": 6960,
+        "count": 145
+      },
+      {
+        "type": "FileLockMeta",
+        "bytes": 6880,
+        "count": 4
+      },
+      {
+        "type": "AsyncFileLockMeta",
+        "bytes": 6880,
+        "count": 4
+      },
+      {
+        "type": "CaseInsensitiveDict",
+        "bytes": 6736,
+        "count": 3
+      },
+      {
+        "type": "SelectorAttribute",
+        "bytes": 6320,
+        "count": 79
+      },
+      {
+        "type": "_dict",
+        "bytes": 6104,
+        "count": 15
+      },
+      {
+        "type": "deque",
+        "bytes": 6080,
+        "count": 8
+      },
+      {
+        "type": "_ProxyLookup",
+        "bytes": 5760,
+        "count": 80
+      },
+      {
+        "type": "classmethod_descriptor",
+        "bytes": 5616,
+        "count": 78
+      },
+      {
+        "type": "_GenericAlias",
+        "bytes": 5616,
+        "count": 117
+      },
+      {
+        "type": "builtin_method",
+        "bytes": 5360,
+        "count": 67
+      },
+      {
+        "type": "Random",
+        "bytes": 5104,
+        "count": 2
+      },
+      {
+        "type": "cached_property",
+        "bytes": 4800,
+        "count": 67
+      },
+      {
+        "type": "SelectorTag",
+        "bytes": 4800,
+        "count": 75
+      }
+    ]
+  },
+  "code_by_file": {
+    "total_code_bytes": 14780728,
+    "n_files": 1211,
+    "top_files": [
+      {
+        "file": "<string>",
+        "bytes": 363456,
+        "n_code_objs": 1334
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/commands/core.py",
+        "bytes": 224256,
+        "n_code_objs": 719
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypika/queries.py",
+        "bytes": 142056,
+        "n_code_objs": 450
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypika/terms.py",
+        "bytes": 140744,
+        "n_code_objs": 487
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/PIL/Image.py",
+        "bytes": 124368,
+        "n_code_objs": 308
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/utils/data.py",
+        "bytes": 122576,
+        "n_code_objs": 330
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/connection.py",
+        "bytes": 108792,
+        "n_code_objs": 299
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/_writer.py",
+        "bytes": 104400,
+        "n_code_objs": 202
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/cluster.py",
+        "bytes": 97392,
+        "n_code_objs": 239
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/model/document.py",
+        "bytes": 97248,
+        "n_code_objs": 207
+      },
+      {
+        "file": "/usr/lib/python3.14/typing.py",
+        "bytes": 95136,
+        "n_code_objs": 260
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/click/core.py",
+        "bytes": 94872,
+        "n_code_objs": 261
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "bytes": 92344,
+        "n_code_objs": 197
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/asyncio/cluster.py",
+        "bytes": 88688,
+        "n_code_objs": 228
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic/json_schema.py",
+        "bytes": 84536,
+        "n_code_objs": 238
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/database/query.py",
+        "bytes": 82504,
+        "n_code_objs": 145
+      },
+      {
+        "file": "/usr/lib/python3.14/xml/dom/minidom.py",
+        "bytes": 81368,
+        "n_code_objs": 215
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/more_itertools/more.py",
+        "bytes": 80272,
+        "n_code_objs": 188
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypika/dialects.py",
+        "bytes": 80120,
+        "n_code_objs": 273
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/_page.py",
+        "bytes": 79152,
+        "n_code_objs": 168
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/bs4/element.py",
+        "bytes": 78960,
+        "n_code_objs": 254
+      },
+      {
+        "file": "/usr/lib/python3.14/inspect.py",
+        "bytes": 77776,
+        "n_code_objs": 143
+      },
+      {
+        "file": "/usr/lib/python3.14/unittest/mock.py",
+        "bytes": 73920,
+        "n_code_objs": 165
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/datastructures/structures.py",
+        "bytes": 73392,
+        "n_code_objs": 268
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/generic/_data_structures.py",
+        "bytes": 70920,
+        "n_code_objs": 179
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/rq/job.py",
+        "bytes": 70416,
+        "n_code_objs": 182
+      },
+      {
+        "file": "/usr/lib/python3.14/zipfile/__init__.py",
+        "bytes": 68728,
+        "n_code_objs": 98
+      },
+      {
+        "file": "/usr/lib/python3.14/argparse.py",
+        "bytes": 68160,
+        "n_code_objs": 138
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/soupsieve/css_match.py",
+        "bytes": 67712,
+        "n_code_objs": 178
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/rq/worker.py",
+        "bytes": 67608,
+        "n_code_objs": 144
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/html5lib/_tokenizer.py",
+        "bytes": 66320,
+        "n_code_objs": 73
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cryptography/hazmat/primitives/serialization/ssh.py",
+        "bytes": 62664,
+        "n_code_objs": 167
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/core/doctype/user/user.py",
+        "bytes": 60400,
+        "n_code_objs": 111
+      },
+      {
+        "file": "/usr/lib/python3.14/pickle.py",
+        "bytes": 60016,
+        "n_code_objs": 128
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic/types.py",
+        "bytes": 58296,
+        "n_code_objs": 200
+      },
+      {
+        "file": "/usr/lib/python3.14/logging/__init__.py",
+        "bytes": 57968,
+        "n_code_objs": 154
+      },
+      {
+        "file": "/usr/lib/python3.14/asyncio/base_events.py",
+        "bytes": 56520,
+        "n_code_objs": 108
+      },
+      {
+        "file": "/usr/lib/python3.14/ipaddress.py",
+        "bytes": 56496,
+        "n_code_objs": 142
+      },
+      {
+        "file": "/usr/lib/python3.14/collections/__init__.py",
+        "bytes": 56168,
+        "n_code_objs": 171
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/asyncio/client.py",
+        "bytes": 55784,
+        "n_code_objs": 147
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/columns.py",
+        "bytes": 55168,
+        "n_code_objs": 170
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/urllib3/response.py",
+        "bytes": 55088,
+        "n_code_objs": 154
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/client.py",
+        "bytes": 54896,
+        "n_code_objs": 145
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/_doc_common.py",
+        "bytes": 54480,
+        "n_code_objs": 147
+      },
+      {
+        "file": "/usr/lib/python3.14/urllib/request.py",
+        "bytes": 53784,
+        "n_code_objs": 113
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/psutil/_pslinux.py",
+        "bytes": 53032,
+        "n_code_objs": 86
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/reading.py",
+        "bytes": 52440,
+        "n_code_objs": 168
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/asyncio/connection.py",
+        "bytes": 52288,
+        "n_code_objs": 125
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic_core/core_schema.py",
+        "bytes": 52120,
+        "n_code_objs": 204
+      },
+      {
+        "file": "/usr/lib/python3.14/enum.py",
+        "bytes": 52080,
+        "n_code_objs": 98
+      },
+      {
+        "file": "/usr/lib/python3.14/unittest/case.py",
+        "bytes": 51400,
+        "n_code_objs": 121
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/semantic_version/base.py",
+        "bytes": 51040,
+        "n_code_objs": 116
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/model/base_document.py",
+        "bytes": 51032,
+        "n_code_objs": 91
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/generic/_base.py",
+        "bytes": 50672,
+        "n_code_objs": 162
+      },
+      {
+        "file": "/usr/lib/python3.14/http/cookiejar.py",
+        "bytes": 49088,
+        "n_code_objs": 93
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/xmp.py",
+        "bytes": 48760,
+        "n_code_objs": 154
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/__init__.py",
+        "bytes": 48600,
+        "n_code_objs": 118
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/database/database.py",
+        "bytes": 48152,
+        "n_code_objs": 121
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/babel/dates.py",
+        "bytes": 47392,
+        "n_code_objs": 113
+      },
+      {
+        "file": "/usr/lib/python3.14/asyncio/selector_events.py",
+        "bytes": 46664,
+        "n_code_objs": 85
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/model/db_query.py",
+        "bytes": 45944,
+        "n_code_objs": 68
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/utils/__init__.py",
+        "bytes": 45584,
+        "n_code_objs": 116
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/fields.py",
+        "bytes": 45480,
+        "n_code_objs": 125
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pypdf/_reader.py",
+        "bytes": 44816,
+        "n_code_objs": 80
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/passlib/utils/handlers.py",
+        "bytes": 44784,
+        "n_code_objs": 105
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic/main.py",
+        "bytes": 43912,
+        "n_code_objs": 121
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/sql_metadata/parser.py",
+        "bytes": 42896,
+        "n_code_objs": 95
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic/networks.py",
+        "bytes": 42832,
+        "n_code_objs": 157
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/test.py",
+        "bytes": 42360,
+        "n_code_objs": 122
+      },
+      {
+        "file": "/usr/lib/python3.14/pathlib/__init__.py",
+        "bytes": 42272,
+        "n_code_objs": 106
+      },
+      {
+        "file": "/usr/lib/python3.14/configparser.py",
+        "bytes": 41944,
+        "n_code_objs": 101
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/click/types.py",
+        "bytes": 41904,
+        "n_code_objs": 132
+      },
+      {
+        "file": "<frozen importlib._bootstrap_external>",
+        "bytes": 41584,
+        "n_code_objs": 104
+      },
+      {
+        "file": "/usr/lib/python3.14/traceback.py",
+        "bytes": 41200,
+        "n_code_objs": 62
+      },
+      {
+        "file": "/usr/lib/python3.14/importlib/metadata/__init__.py",
+        "bytes": 41088,
+        "n_code_objs": 139
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/yaml/emitter.py",
+        "bytes": 41032,
+        "n_code_objs": 60
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/psutil/__init__.py",
+        "bytes": 40480,
+        "n_code_objs": 91
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/RestrictedPython/transformer.py",
+        "bytes": 40328,
+        "n_code_objs": 117
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/model/meta.py",
+        "bytes": 40176,
+        "n_code_objs": 85
+      },
+      {
+        "file": "/usr/lib/python3.14/threading.py",
+        "bytes": 40048,
+        "n_code_objs": 106
+      },
+      {
+        "file": "/usr/lib/python3.14/xml/etree/ElementTree.py",
+        "bytes": 40024,
+        "n_code_objs": 93
+      },
+      {
+        "file": "/usr/lib/python3.14/ssl.py",
+        "bytes": 39488,
+        "n_code_objs": 107
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/dateutil/tz/tz.py",
+        "bytes": 39368,
+        "n_code_objs": 82
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "bytes": 39264,
+        "n_code_objs": 85
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/passlib/context.py",
+        "bytes": 39160,
+        "n_code_objs": 88
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/rq/queue.py",
+        "bytes": 39112,
+        "n_code_objs": 97
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/yaml/scanner.py",
+        "bytes": 38960,
+        "n_code_objs": 72
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/dateutil/parser/_parser.py",
+        "bytes": 38696,
+        "n_code_objs": 58
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pymysql/connections.py",
+        "bytes": 38328,
+        "n_code_objs": 62
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/qparser/plugins.py",
+        "bytes": 37248,
+        "n_code_objs": 94
+      },
+      {
+        "file": "/usr/lib/python3.14/shutil.py",
+        "bytes": 37112,
+        "n_code_objs": 51
+      },
+      {
+        "file": "/usr/lib/python3.14/subprocess.py",
+        "bytes": 37056,
+        "n_code_objs": 52
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/writing.py",
+        "bytes": 36872,
+        "n_code_objs": 95
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/babel/core.py",
+        "bytes": 36816,
+        "n_code_objs": 125
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/core/doctype/file/file.py",
+        "bytes": 36808,
+        "n_code_objs": 63
+      },
+      {
+        "file": "/usr/lib/python3.14/logging/handlers.py",
+        "bytes": 36744,
+        "n_code_objs": 71
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/soupsieve/css_parser.py",
+        "bytes": 36496,
+        "n_code_objs": 64
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/packaging/version.py",
+        "bytes": 36184,
+        "n_code_objs": 106
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/distro/distro.py",
+        "bytes": 35984,
+        "n_code_objs": 110
+      },
+      {
+        "file": "/usr/lib/python3.14/http/client.py",
+        "bytes": 35712,
+        "n_code_objs": 71
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/matching/binary.py",
+        "bytes": 35656,
+        "n_code_objs": 79
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/datastructures/headers.py",
+        "bytes": 35168,
+        "n_code_objs": 126
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/commands/search/commands.py",
+        "bytes": 34184,
+        "n_code_objs": 88
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/translate.py",
+        "bytes": 33944,
+        "n_code_objs": 59
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/query/spans.py",
+        "bytes": 33832,
+        "n_code_objs": 93
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/tenacity/__init__.py",
+        "bytes": 33784,
+        "n_code_objs": 97
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/PIL/ImageFile.py",
+        "bytes": 33496,
+        "n_code_objs": 88
+      },
+      {
+        "file": "/usr/lib/python3.14/xml/dom/expatbuilder.py",
+        "bytes": 33224,
+        "n_code_objs": 76
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/cssutils/serialize.py",
+        "bytes": 33040,
+        "n_code_objs": 46
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/idsets.py",
+        "bytes": 32808,
+        "n_code_objs": 104
+      },
+      {
+        "file": "<frozen _collections_abc>",
+        "bytes": 32640,
+        "n_code_objs": 111
+      },
+      {
+        "file": "/usr/lib/python3.14/asyncio/unix_events.py",
+        "bytes": 32192,
+        "n_code_objs": 60
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/pydantic/fields.py",
+        "bytes": 31912,
+        "n_code_objs": 84
+      },
+      {
+        "file": "/usr/lib/python3.14/dis.py",
+        "bytes": 31376,
+        "n_code_objs": 58
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/babel/messages/catalog.py",
+        "bytes": 31368,
+        "n_code_objs": 89
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/whoosh/matching/wrappers.py",
+        "bytes": 31320,
+        "n_code_objs": 96
+      },
+      {
+        "file": "/usr/lib/python3.14/re/_parser.py",
+        "bytes": 31200,
+        "n_code_objs": 38
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/apps/frappe/frappe/database/sqlite/database.py",
+        "bytes": 30960,
+        "n_code_objs": 93
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/werkzeug/datastructures/mixins.py",
+        "bytes": 30952,
+        "n_code_objs": 125
+      },
+      {
+        "file": "/home/frappe/benches/bench-cpython314/env/lib/python3.14/site-packages/redis/_parsers/helpers.py",
+        "bytes": 30896,
+        "n_code_objs": 80
+      }
+    ]
+  },
+  "top_packages": [
+    [
+      "frappe",
+      230
+    ],
+    [
+      "encodings",
+      97
+    ],
+    [
+      "requests",
+      92
+    ],
+    [
+      "num2words",
+      62
+    ],
+    [
+      "whoosh",
+      59
+    ],
+    [
+      "oauthlib",
+      58
+    ],
+    [
+      "redis",
+      57
+    ],
+    [
+      "pypdf",
+      48
+    ],
+    [
+      "werkzeug",
+      43
+    ],
+    [
+      "chardet",
+      43
+    ],
+    [
+      "pydantic",
+      42
+    ],
+    [
+      "cssutils",
+      40
+    ],
+    [
+      "cryptography",
+      34
+    ],
+    [
+      "asyncio",
+      30
+    ],
+    [
+      "urllib3",
+      28
+    ],
+    [
+      "rq",
+      25
+    ],
+    [
+      "importlib",
+      22
+    ],
+    [
+      "sqlparse",
+      20
+    ],
+    [
+      "xml",
+      20
+    ],
+    [
+      "yaml",
+      18
+    ],
+    [
+      "PIL",
+      17
+    ],
+    [
+      "pymysql",
+      17
+    ],
+    [
+      "email",
+      15
+    ],
+    [
+      "filetype",
+      15
+    ],
+    [
+      "passlib",
+      15
+    ],
+    [
+      "bs4",
+      14
+    ],
+    [
+      "html5lib",
+      13
+    ],
+    [
+      "babel",
+      13
+    ],
+    [
+      "click",
+      12
+    ],
+    [
+      "posthog",
+      12
+    ],
+    [
+      "dateutil",
+      11
+    ],
+    [
+      "tenacity",
+      11
+    ],
+    [
+      "unittest",
+      10
+    ],
+    [
+      "filelock",
+      10
+    ],
+    [
+      "MySQLdb",
+      10
+    ],
+    [
+      "charset_normalizer",
+      9
+    ],
+    [
+      "RestrictedPython",
+      9
+    ],
+    [
+      "backoff",
+      8
+    ],
+    [
+      "pyotp",
+      8
+    ],
+    [
+      "pypika",
+      7
+    ]
+  ]
+}

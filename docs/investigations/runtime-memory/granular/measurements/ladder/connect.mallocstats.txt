@@ -1,0 +1,84 @@
+Small block threshold = 512, in 32 size classes.
+
+class   size   num pools   blocks in use  avail blocks
+-----   ----   ---------   -------------  ------------
+    0     16           2            1024          1018
+    1     32         103           52290           240
+    2     48         260           88141           259
+    3     64         855          217593           432
+    4     80         402           81785           223
+    5     96         169           28628           102
+    6    112          94           13533            97
+    7    128         109           13825            18
+    8    144          65            7315            30
+    9    160          72            7327            17
+   10    176         465           42665           115
+   11    192          27            2267            28
+   12    208          63            4868            46
+   13    224          97            6939            45
+   14    240         116            7809            79
+   15    256         120            7530            30
+   16    272          84            5005            35
+   17    288          86            4767            49
+   18    304          58            3025            49
+   19    320          53            2650            53
+   20    336          48            2276            28
+   21    352          36            1625            31
+   22    368          34            1451            45
+   23    384          32            1318            26
+   24    400          97            3836            44
+   25    416          25             935            40
+   26    432          23             845             6
+   27    448          22             773            19
+   28    464          21             716            19
+   29    480          20             678             2
+   30    496          20             629            11
+   31    512          32             961            31
+
+# arenas allocated total           =                   59
+# arenas reclaimed                 =                    0
+# arenas highwater mark            =                   59
+# arenas allocated current         =                   59
+59 arenas * 1048576 bytes/arena    =           61,865,984
+
+# bytes in allocated blocks        =           59,936,528
+# bytes in available blocks        =              362,592
+45 unused pools * 16384 bytes      =              737,280
+# bytes lost to pool headers       =              178,080
+# bytes lost to quantization       =              307,440
+# bytes lost to arena alignment    =              344,064
+Total                              =           61,865,984
+
+arena map counts
+# arena map mid nodes              =                    1
+# arena map bot nodes              =                    1
+
+# bytes lost to arena map root     =              262,144
+# bytes lost to arena map mid      =              262,144
+# bytes lost to arena map bot      =              131,072
+Total                              =              655,360
+
+            4 free PyDictObjects * 48 bytes each =                  192
+        4 free PyDictKeysObjects * 32 bytes each =                  128
+           0 free PyFloatObjects * 24 bytes each =                    0
+            1 free PyListObjects * 40 bytes each =                   40
+   1 free 1-sized PyTupleObjects * 40 bytes each =                   40
+   1 free 2-sized PyTupleObjects * 48 bytes each =                   48
+   1 free 3-sized PyTupleObjects * 56 bytes each =                   56
+   1 free 4-sized PyTupleObjects * 64 bytes each =                   64
+   1 free 5-sized PyTupleObjects * 72 bytes each =                   72
+   0 free 6-sized PyTupleObjects * 80 bytes each =                    0
+   0 free 7-sized PyTupleObjects * 88 bytes each =                    0
+   0 free 8-sized PyTupleObjects * 96 bytes each =                    0
+  0 free 9-sized PyTupleObjects * 104 bytes each =                    0
+ 0 free 10-sized PyTupleObjects * 112 bytes each =                    0
+ 0 free 11-sized PyTupleObjects * 120 bytes each =                    0
+ 0 free 12-sized PyTupleObjects * 128 bytes each =                    0
+ 0 free 13-sized PyTupleObjects * 136 bytes each =                    0
+ 0 free 14-sized PyTupleObjects * 144 bytes each =                    0
+ 0 free 15-sized PyTupleObjects * 152 bytes each =                    0
+ 0 free 16-sized PyTupleObjects * 160 bytes each =                    0
+ 0 free 17-sized PyTupleObjects * 168 bytes each =                    0
+ 0 free 18-sized PyTupleObjects * 176 bytes each =                    0
+ 0 free 19-sized PyTupleObjects * 184 bytes each =                    0
+ 0 free 20-sized PyTupleObjects * 192 bytes each =                    0

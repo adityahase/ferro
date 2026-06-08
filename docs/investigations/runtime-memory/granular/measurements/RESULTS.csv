@@ -1,0 +1,32 @@
+# Archived measured results (warm steady-state, σ<0.3MB, 3x runs). MB = MiB.
+experiment,config,RSS_MB,RSS_after_trim_MB,Anon_private_MB,n_modules,notes
+ladder,bare_interpreter,12.0,,4.9,64,pass only
+ladder,import_frappe+app,117.9,,87.7,1620,the +106MB cliff
+ladder,init+connect_sqlite,118.5,,88.0,1623,
+ladder,warmmeta_44dt,124.2,,93.0,1632,
+ladder,full_workload_actual_usage,154.4,132.5,122.1,1730,primary; trim reclaims 21.9
+allocator,glibc_default,154.9,132.8,122.4,1729,3x median
+allocator,glibc_arena1_trim64k,154.1,132.1,121.8,1729,env tunables ~no auto-release
+allocator,PYTHONMALLOC=malloc,158.9,137.8,126.5,1729,WORSE - keep pymalloc
+allocator,jemalloc_default,158.4,158.4,125.5,1729,worse than glibc by default
+allocator,jemalloc_dirty_decay_ms0,135.4,135.4,102.3,1729,BEST automatic; -19.5
+allocator,jemalloc_1arena_decay0,135.1,135.1,102.2,1729,
+allocator,tcmalloc_minimal,162.2,162.2,129.6,1729,worst
+allocator,mimalloc_default,159.3,159.3,126.7,1729,
+allocator,mimalloc_purge0,141.4,141.4,108.9,1729,
+stacking,glibc_eager_baseline,154.9,132.8,122.4,1729,
+stacking,glibc_lazyimports,127.2,105.0,97.7,1320,lazy=-27.7MB -409 modules
+stacking,jemalloc0_eager,135.4,135.4,102.3,1729,
+stacking,jemalloc0_lazyimports,107.4,107.4,77.3,1320,both levers stacked = -47.5MB -31%
+serve_path_min,baseline_eager,129.0,,,1715,minimal serve path
+serve_path_min,lazy_11deps,100.9,,,1301,-28.1MB all-200
+cold_vs_warm,cold_redis_first_run,166.0,,133.0,1740,builds cache
+cold_vs_warm,warm_steady_state,154.8,132.7,122.3,1729,
+gunicorn_worker,glibc_read_120req,125.0,,94.5,,PSS 115.3
+gunicorn_worker,jemalloc_read_120req,126.4,,96.1,,jemalloc ~0 win on read-only (low churn)
+gunicorn_worker,glibc_write200_then_trim,131.4->127.5,,,,boot 117.2 +14.2 churn; trim -3.9
+pool_4workers,no_preload,509.0_RSS,,365.1_PrivDirty,,PSS 393.7 (real RAM)
+pool_4workers,preload_gcfreeze_on,537.8_RSS,,111.5_PrivDirty,,PSS 204.4 (-48% vs no-preload)
+pool_4workers,preload_gcfreeze_off,537.7_RSS,,107.5_PrivDirty,,PSS 201.2 (gc.freeze ~0 benefit)
+pool_4workers,preload_freeze_on_after_1600req,548.4_RSS,,120.8_PrivDirty,,PSS 214.8
+pool_4workers,preload_freeze_off_after_1600req,548.2_RSS,,118.0_PrivDirty,,PSS 212.6 (refcount churn dominates)

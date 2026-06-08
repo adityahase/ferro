@@ -1,0 +1,10 @@
+label,scenario,peak_rss_kib,exit_rc
+CPython-3.14.4,bare,9876,0
+CPython-3.14.4,stdlib_imports,20492,0
+CPython-3.14.4,list_1M_ints,49000,0
+PyPy-7.3.22-py3.11,bare,62020,0
+PyPy-7.3.22-py3.11,stdlib_imports,81996,0
+PyPy-7.3.22-py3.11,list_1M_ints,73700,0
+MicroPython-1.28.0,bare,2964,0
+MicroPython-1.28.0,list_1M_ints,3664,0
+MicroPython-1.28.0,stdlib_imports,NA,1

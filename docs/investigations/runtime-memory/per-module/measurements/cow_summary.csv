@@ -1,0 +1,6 @@
+model,n_workers,do_work,freeze,agg_rss_kib,agg_pss_kib,agg_uss_kib,parent_shared_dirty_kib,child0_uss_kib,child0_shared_dirty_kib
+prefork_cow,4,0,0,467960,110302,23356,82772,852,83112
+prefork_cow,4,0,1,467792,110094,23140,82780,836,83132
+prefork_cow,4,1,0,479412,126976,42536,78984,4976,79064
+prefork_cow,4,1,1,479172,126413,41884,79060,4876,79144
+independent,4,,,463508,359974,335652,,83928,
