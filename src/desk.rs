@@ -71,6 +71,12 @@ impl RawResp {
 pub struct Desk {
     /// Root of the built asset tree (`<bench>/sites/assets`). `/assets/X` -> `<assets_dir>/X`.
     assets_dir: PathBuf,
+    /// The forge `apps/` dir, when known — used to read each installed app's `hooks.py` for its
+    /// title/logo when rebuilding `boot.app_data`. `None` falls back to app-name-derived metadata.
+    apps_dir: Option<PathBuf>,
+    /// The site's `installed_apps` (from site_config — authoritative), used to build `app_data`.
+    /// The DB's own `installed_apps`/`Module Def` are unreliable on natively-provisioned sites.
+    installed_apps: Vec<String>,
     /// Baseline bootinfo snapshot (captured once from a real site), patched per request.
     boot_template: Value,
     /// Precomputed `<head>`/`<body>` HTML fragments for the shell.
@@ -99,8 +105,14 @@ const APP_INCLUDE_ICONS: &[&str] = &[
 
 impl Desk {
     /// Build Desk state. `assets_dir` is `<bench>/sites/assets`. Falls back to vendored
-    /// snapshots of `assets.json` and the bootinfo if the live files are unavailable.
-    pub fn new(assets_dir: PathBuf, boot_override: Option<PathBuf>) -> Desk {
+    /// snapshots of `assets.json` and the bootinfo if the live files are unavailable. `apps_dir`
+    /// (the forge `apps/` dir) lets the boot rebuild `app_data` with each app's real title/logo.
+    pub fn new(
+        assets_dir: PathBuf,
+        boot_override: Option<PathBuf>,
+        apps_dir: Option<PathBuf>,
+        installed_apps: Vec<String>,
+    ) -> Desk {
         // assets.json: prefer the live file (matches the bundles actually on disk), else vendored.
         let asset_map: HashMap<String, String> = std::fs::read_to_string(assets_dir.join("assets.json"))
             .ok()
@@ -150,6 +162,8 @@ impl Desk {
 
         Desk {
             assets_dir,
+            apps_dir,
+            installed_apps,
             boot_template,
             html_shell: HtmlShell {
                 css_tags,
@@ -161,9 +175,14 @@ impl Desk {
     }
 
     /// Build the bootinfo for `user`: clone the baseline and patch the live/dynamic bits.
-    fn build_boot(&self, user: &str) -> Value {
+    fn build_boot(&self, con: &Connection, user: &str) -> Value {
         let mut boot = self.boot_template.clone();
         if let Value::Object(ref mut o) = boot {
+            // The Desk sidebar + app switcher render from the *static* `boot.workspaces`/`app_data`
+            // (the get_workspace_sidebar_items xcall only fires on edit), so the frozen frappe-only
+            // snapshot must be replaced with this tenant's actually-installed apps + workspaces —
+            // otherwise installed apps (ERPNext, HRMS, …) never appear in Desk.
+            self.inject_desktop_data(con, o);
             // Make sure the SPA does not drop into the setup wizard.
             if let Some(Value::Object(sd)) = o.get_mut("sysdefaults") {
                 sd.insert("setup_complete".into(), json!("1"));
@@ -196,9 +215,220 @@ impl Desk {
         boot
     }
 
+    /// Rebuild the per-site desktop data (workspace sidebar + app switcher) from the tenant DB,
+    /// replacing the frozen frappe-only snapshot baked into `desk_boot.json`.
+    ///
+    /// The modern Desk bundle renders the left sidebar from `boot.workspace_sidebar_item` (a
+    /// per-module group of nav items), seeds `frappe.modules`/`allowed_workspaces` from
+    /// `boot.workspaces.pages`, and builds the app switcher from `boot.app_data` — it does NOT call
+    /// `get_workspace_sidebar_items` on initial load. So unless these reflect what's actually
+    /// installed, an installed app's workspaces (ERPNext, HRMS, …) never appear in Desk. Mirrors
+    /// `frappe.boot.load_desktop_data` + `get_sidebar_items` + `auto_generate_sidebar_from_module`.
+    ///
+    /// Everything is derived from `tabWorkspace` (which carries `module` + `app` per row) and a few
+    /// supporting tables, never from the DB's own `installed_apps`/`Module Def` rows — those are
+    /// unreliable on natively-provisioned sites (the provisioner doesn't always write Module Def or
+    /// the DB `installed_apps`). The authoritative app list is the site_config one threaded in.
+    fn inject_desktop_data(&self, con: &Connection, o: &mut Map<String, Value>) {
+        // 1. Live workspace pages — the same query the sidebar xcall uses (public, not hidden).
+        let mut page_arr = child_rows_query(
+            con,
+            "SELECT * FROM \"tabWorkspace\" WHERE COALESCE(public,0)=1 AND COALESCE(is_hidden,0)=0 \
+             ORDER BY COALESCE(sequence_id, 1e9), name",
+        )
+        .ok()
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+
+        // 2. module -> app, seeded from Module Def then filled from each workspace's own `app` column
+        //    (Module Def is frequently missing the installed app's modules on a native install).
+        let mut mod_app: HashMap<String, String> = HashMap::new();
+        if let Ok(Value::Array(rows)) =
+            child_rows_query(con, "SELECT name, app_name FROM \"tabModule Def\"")
+        {
+            for r in &rows {
+                if let (Some(name), Some(app)) = (
+                    r.get("name").and_then(|v| v.as_str()),
+                    r.get("app_name").and_then(|v| v.as_str()),
+                ) {
+                    if !name.is_empty() && !app.is_empty() {
+                        mod_app.insert(name.to_string(), app.to_string());
+                    }
+                }
+            }
+        }
+        let page_str = |p: &Value, k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        for p in &page_arr {
+            let (module, app) = (page_str(p, "module"), page_str(p, "app"));
+            if !module.is_empty() && !app.is_empty() {
+                mod_app.entry(module).or_insert(app);
+            }
+        }
+        // The app that owns a page: its own `app`, else its module's app, else frappe.
+        let app_of = |p: &Value| -> String {
+            let a = page_str(p, "app");
+            if !a.is_empty() {
+                return a;
+            }
+            mod_app.get(&page_str(p, "module")).cloned().unwrap_or_else(|| "frappe".to_string())
+        };
+
+        // Land the tenant on the app it installed: the Desk picks `workspaces[0]` as the default
+        // page, so order non-frappe-app workspaces first (a stable sort preserves sequence_id within
+        // each app). A frappe-only site is unaffected (everything is frappe → order unchanged).
+        page_arr.sort_by_key(|p| u8::from(app_of(p) == "frappe"));
+
+        o.insert(
+            "workspaces".into(),
+            json!({ "pages": page_arr.clone(), "has_access": true, "has_create_access": true }),
+        );
+        // The bundle derives this from workspaces.pages itself, but set it too for robustness.
+        o.insert("allowed_workspaces".into(), Value::Array(page_arr.clone()));
+
+        // 3. Module -> its workspaces (first-seen order) and -> a few top doctypes (for sidebar nav).
+        let mut module_order: Vec<String> = Vec::new();
+        let mut module_pages: HashMap<String, Vec<String>> = HashMap::new();
+        let mut mww: Map<String, Value> = Map::new();
+        for p in &page_arr {
+            let (module, name) = (page_str(p, "module"), page_str(p, "name"));
+            if module.is_empty() || name.is_empty() {
+                continue;
+            }
+            if !module_pages.contains_key(&module) {
+                module_order.push(module.clone());
+            }
+            module_pages.entry(module.clone()).or_default().push(name.clone());
+            mww.entry(module).or_insert_with(|| json!([])).as_array_mut().unwrap().push(json!(name));
+        }
+        let mut module_doctypes: HashMap<String, Vec<String>> = HashMap::new();
+        if let Ok(Value::Array(rows)) = child_rows_query(
+            con,
+            "SELECT name, module FROM \"tabDocType\" \
+             WHERE COALESCE(istable,0)=0 AND COALESCE(issingle,0)=0 ORDER BY module, name",
+        ) {
+            for r in &rows {
+                let (m, n) = (
+                    r.get("module").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    r.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                );
+                if m.is_empty() || n.is_empty() {
+                    continue;
+                }
+                let v = module_doctypes.entry(m).or_default();
+                if v.len() < 5 {
+                    v.push(n);
+                }
+            }
+        }
+
+        // 4. workspace_sidebar_item — one auto-generated sidebar group per module (keyed by
+        //    title.lower(), as `get_sidebar_items` does), each carrying its module's top doctypes +
+        //    workspaces as nav items. This is what the Desk left sidebar actually renders.
+        let mut wsi: Map<String, Value> = Map::new();
+        for module in &module_order {
+            let app = mod_app.get(module).cloned().unwrap_or_else(|| "frappe".to_string());
+            let mut items: Vec<Value> = Vec::new();
+            let mut idx = 1i64;
+            if let Some(dts) = module_doctypes.get(module) {
+                for dt in dts {
+                    let icon = if dt.to_lowercase().contains("settings") { "settings" } else { "file" };
+                    items.push(sidebar_item(dt, dt, "DocType", icon, idx));
+                    idx += 1;
+                }
+            }
+            for w in module_pages.get(module).into_iter().flatten() {
+                items.push(sidebar_item(w, w, "Workspace", "wallpaper", idx));
+                idx += 1;
+            }
+            wsi.insert(
+                module.to_lowercase(),
+                json!({
+                    "label": module,
+                    "items": items,
+                    "header_icon": "hammer",
+                    "module_onboarding": Value::Null,
+                    "module": module,
+                    "app": app,
+                }),
+            );
+        }
+        o.insert("workspace_sidebar_item".into(), Value::Object(wsi));
+
+        // 5. module_app (scrubbed module -> app) + module_list, for the header/app lookups.
+        let mut module_app = Map::new();
+        let mut module_list: Vec<Value> = Vec::new();
+        for (module, app) in &mod_app {
+            module_app.insert(scrub(module), json!(app));
+            module_list.push(json!(module));
+        }
+        o.insert("module_app".into(), Value::Object(module_app));
+        o.insert("module_list".into(), Value::Array(module_list));
+        o.insert("module_wise_workspaces".into(), Value::Object(mww));
+
+        // 6. app_data — one entry per installed app (authoritative site_config list), with its
+        //    workspaces + modules, so the app switcher lists every installed app.
+        let apps = if self.installed_apps.is_empty() {
+            let mut seen: Vec<String> = Vec::new();
+            for p in &page_arr {
+                let a = app_of(p);
+                if !seen.contains(&a) {
+                    seen.push(a);
+                }
+            }
+            if !seen.iter().any(|a| a == "frappe") {
+                seen.insert(0, "frappe".to_string());
+            }
+            seen
+        } else {
+            self.installed_apps.clone()
+        };
+        let mut app_data: Vec<Value> = Vec::new();
+        for app in &apps {
+            let workspaces: Vec<String> = page_arr
+                .iter()
+                .filter(|p| app_of(p) == *app)
+                .map(|p| page_str(p, "name"))
+                .collect();
+            let modules: Vec<Value> = mod_app
+                .iter()
+                .filter(|(_, a)| *a == app)
+                .map(|(m, _)| json!(m))
+                .collect();
+            let (title, logo) = self.app_meta(app);
+            let route = workspaces.first().map(|w| format!("/app/{}", slug(w))).unwrap_or_default();
+            app_data.push(json!({
+                "app_name": app,
+                "app_title": title,
+                "app_route": route,
+                "app_logo_url": logo,
+                "modules": modules,
+                "workspaces": workspaces,
+            }));
+        }
+        o.insert("app_data".into(), Value::Array(app_data));
+    }
+
+    /// (app_title, app_logo_url) for an app — read from its `hooks.py` when the apps dir is known,
+    /// falling back to the app name and Frappe's logo (always a valid asset path).
+    fn app_meta(&self, app: &str) -> (String, String) {
+        const FRAPPE_LOGO: &str = "/assets/frappe/images/frappe-framework-logo.svg";
+        let hooks_src = self.apps_dir.as_ref().and_then(|d| {
+            std::fs::read_to_string(d.join(app).join(app).join("hooks.py")).ok()
+        });
+        let title = hooks_src
+            .as_deref()
+            .and_then(|s| hook_value(s, "app_title"))
+            .unwrap_or_else(|| app.to_string());
+        let logo = hooks_src
+            .as_deref()
+            .and_then(|s| hook_value(s, "app_logo_url"))
+            .unwrap_or_else(|| FRAPPE_LOGO.to_string());
+        (title, logo)
+    }
+
     /// Render the `/desk` HTML shell with the boot blob + csrf token.
-    fn render_html(&self, user: &str, csrf: &str) -> String {
-        let boot = self.build_boot(user);
+    fn render_html(&self, con: &Connection, user: &str, csrf: &str) -> String {
+        let boot = self.build_boot(con, user);
         let boot_json = serde_json::to_string(&boot).unwrap_or_else(|_| "{}".into());
         let s = &self.html_shell;
         format!(
@@ -267,7 +497,7 @@ frappe._translations_loaded = fetch(`/api/method/frappe.translate.get_boot_trans
 
 /// Try to handle a "raw" route (asset / HTML shell / socket.io / redirect). Returns None for
 /// anything that should fall through to the JSON API router.
-pub fn try_raw(desk: &Desk, user: &str, method: &str, url: &str) -> Option<RawResp> {
+pub fn try_raw(desk: &Desk, con: &Connection, user: &str, method: &str, url: &str) -> Option<RawResp> {
     let path = url.split('?').next().unwrap_or(url);
 
     // Static assets (the bulk of Desk's requests).
@@ -283,7 +513,7 @@ pub fn try_raw(desk: &Desk, user: &str, method: &str, url: &str) -> Option<RawRe
     if path == "/desk" || path.starts_with("/desk/") {
         let csrf = util::random_name(); // demo CSRF token (not validated server-side)
         let _ = method;
-        return Some(RawResp::html(200, desk.render_html(user, &csrf)));
+        return Some(RawResp::html(200, desk.render_html(con, user, &csrf)));
     }
 
     // Realtime is not served; let it 404 quietly so Desk degrades to no-realtime.
@@ -920,6 +1150,68 @@ fn method_getpage(con: &Connection, args: &HashMap<String, String>) -> (u16, Val
     }
 }
 
+/// One `Workspace Sidebar Item` (serialized shape the Desk bundle renders), with the doctype-default
+/// fields the snapshot carries so no field the bundle reads is missing.
+fn sidebar_item(label: &str, link_to: &str, link_type: &str, icon: &str, idx: i64) -> Value {
+    json!({
+        "label": label,
+        "link_to": link_to,
+        "link_type": link_type,
+        "type": "Link",
+        "icon": icon,
+        "child": 0,
+        "collapsible": 1,
+        "indent": 0,
+        "keep_closed": 0,
+        "url": Value::Null,
+        "show_arrow": 0,
+        "filters": Value::Null,
+        "route_options": Value::Null,
+        "tab": Value::Null,
+        "open_in_new_tab": 0,
+        "idx": idx,
+    })
+}
+
+/// Frappe's `scrub`: lowercase, spaces/hyphens -> underscores (module-name -> module_app key).
+fn scrub(s: &str) -> String {
+    s.to_lowercase().replace([' ', '-'], "_")
+}
+
+/// Frappe's `slug`: lowercase, spaces -> hyphens (workspace name -> /app/<slug> route).
+fn slug(s: &str) -> String {
+    s.to_lowercase().replace(' ', "-")
+}
+
+/// Read a top-level `key = "..."` (or `'...'`) string assignment from a `hooks.py` source. Skips
+/// commented lines; returns the first uncommented match. Good enough for `app_title`/`app_logo_url`.
+fn hook_value(src: &str, key: &str) -> Option<String> {
+    for line in src.lines() {
+        let t = line.trim_start();
+        if t.starts_with('#') || !t.starts_with(key) {
+            continue;
+        }
+        // require an `=` after the key (not e.g. `app_title_extra`)
+        let after = t[key.len()..].trim_start();
+        if !after.starts_with('=') {
+            continue;
+        }
+        let rhs = after[1..].trim();
+        let bytes = rhs.as_bytes();
+        if bytes.is_empty() {
+            continue;
+        }
+        let q = bytes[0];
+        if q != b'"' && q != b'\'' {
+            continue;
+        }
+        if let Some(end) = rhs[1..].find(q as char) {
+            return Some(rhs[1..1 + end].to_string());
+        }
+    }
+    None
+}
+
 /// Run a SELECT with no params and return the rows as a JSON array of objects.
 fn child_rows_query(con: &Connection, sql: &str) -> Result<Value, OrmError> {
     let mut stmt = con.prepare(sql).map_err(OrmError::Db)?;
@@ -1067,3 +1359,84 @@ const TIMEZONES: &[&str] = &[
     "Asia/Tokyo", "Australia/Sydney", "Europe/Amsterdam", "Europe/Berlin", "Europe/London",
     "Europe/Moscow", "Europe/Paris", "Pacific/Auckland", "UTC",
 ];
+
+#[cfg(test)]
+mod desktop_data_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    /// In-memory site with two installed apps (frappe + erpnext), a hidden workspace, and the
+    /// installed_apps default — the minimum `inject_desktop_data` reads.
+    fn setup_con() -> Connection {
+        let con = Connection::open_in_memory().unwrap();
+        con.execute_batch(
+            "CREATE TABLE \"tabWorkspace\" (name TEXT, title TEXT, label TEXT, module TEXT, \
+                app TEXT, public INTEGER, is_hidden INTEGER, sequence_id REAL, content TEXT, \
+                parent_page TEXT, for_user TEXT, icon TEXT);
+             CREATE TABLE \"tabModule Def\" (name TEXT, app_name TEXT);
+             CREATE TABLE tabDefaultValue (defkey TEXT, defvalue TEXT, parent TEXT);
+             INSERT INTO tabDefaultValue (defkey, defvalue, parent)
+                VALUES ('installed_apps', '[\"frappe\",\"erpnext\"]', '__global');
+             INSERT INTO \"tabModule Def\" (name, app_name) VALUES ('Core','frappe');
+             INSERT INTO \"tabWorkspace\" (name,title,module,app,public,is_hidden,sequence_id) VALUES
+                ('Users','Users','Core','frappe',1,0,1),
+                ('Selling','Selling','Selling','erpnext',1,0,2),
+                ('Accounts','Accounts','Accounts','erpnext',1,0,3),
+                ('Hidden','Hidden','Core','frappe',1,1,4);",
+        )
+        .unwrap();
+        con
+    }
+
+    #[test]
+    fn boot_reflects_installed_apps_not_frozen_snapshot() {
+        let con = setup_con();
+        // No real assets/apps dir: Desk::new falls back to the vendored snapshots. installed_apps
+        // is the authoritative (site_config) list — note erpnext is absent from the DB installed_apps.
+        let desk = Desk::new(
+            PathBuf::from("/nonexistent/assets"),
+            None,
+            None,
+            vec!["frappe".into(), "erpnext".into()],
+        );
+        let boot = desk.build_boot(&con, "Administrator");
+        let o = boot.as_object().unwrap();
+
+        // Sidebar pages = live public, non-hidden workspaces (NOT the frozen frappe-only snapshot).
+        let names: Vec<&str> = o["workspaces"]["pages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p["name"].as_str())
+            .collect();
+        assert!(names.contains(&"Selling") && names.contains(&"Accounts"), "erpnext workspaces present: {names:?}");
+        assert!(names.contains(&"Users"), "frappe workspace present");
+        assert!(!names.contains(&"Hidden"), "hidden workspace excluded");
+        assert_eq!(o["workspaces"]["has_access"], json!(true));
+        // Apps-first ordering: the tenant lands on its installed app (workspaces[0] is erpnext's,
+        // not frappe's), since the Desk uses workspaces[0] as the default page.
+        assert_eq!(names[0], "Selling", "first workspace is the erpnext one (stable seq order)");
+
+        // The sidebar the Desk actually renders: a per-module group, keyed by module.lower(), with
+        // its app set and its workspaces as items — derived from the workspace `app` column even
+        // though the DB has no erpnext Module Def.
+        let wsi = o["workspace_sidebar_item"].as_object().unwrap();
+        let selling = wsi.get("selling").expect("selling sidebar group exists");
+        assert_eq!(selling["app"], json!("erpnext"), "selling group owned by erpnext");
+        assert_eq!(selling["module"], json!("Selling"));
+        let item_links: Vec<&str> = selling["items"].as_array().unwrap().iter().filter_map(|i| i["link_to"].as_str()).collect();
+        assert!(item_links.contains(&"Selling"), "selling workspace is a sidebar item: {item_links:?}");
+
+        // App switcher lists every installed app, each with its own workspaces.
+        let app_data = o["app_data"].as_array().unwrap();
+        let apps: Vec<&str> = app_data.iter().filter_map(|a| a["app_name"].as_str()).collect();
+        assert!(apps.contains(&"frappe") && apps.contains(&"erpnext"), "app_data: {apps:?}");
+        let erp = app_data.iter().find(|a| a["app_name"] == "erpnext").unwrap();
+        let erp_ws: Vec<&str> = erp["workspaces"].as_array().unwrap().iter().filter_map(|w| w.as_str()).collect();
+        assert!(erp_ws.contains(&"Selling") && erp_ws.contains(&"Accounts"), "erpnext app workspaces: {erp_ws:?}");
+
+        // module_app maps scrubbed module name -> owning app (erpnext modules filled from workspaces).
+        assert_eq!(o["module_app"]["accounts"], json!("erpnext"));
+        assert_eq!(o["module_app"]["core"], json!("frappe"));
+    }
+}

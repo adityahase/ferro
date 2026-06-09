@@ -27,7 +27,7 @@
 
 use crate::desk::RawResp;
 use crate::util;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 /// A discovered SPA route: a base path (`/crm`) and its pre-rendered shell HTML.
@@ -46,6 +46,9 @@ struct Redirect {
 pub struct Spa {
     routes: Vec<SpaRoute>,
     redirects: Vec<Redirect>,
+    /// The Desk identity ferro serves as. frappe-ui apps gate their UI on an `isLoggedIn` derived
+    /// from the `user_id` cookie, so the shell response sets it (unless we're serving as Guest).
+    default_user: String,
 }
 
 impl Spa {
@@ -53,7 +56,7 @@ impl Spa {
     /// `apps/` directory; `installed_apps` gates which apps we serve (the forge symlinks *all*
     /// apps via the shared mirror, so we must not serve a route for an app that isn't installed).
     /// Returns None when no installed app ships a (built) SPA shell.
-    pub fn discover(apps_dir: &Path, installed_apps: &[String], site_name: &str) -> Option<Spa> {
+    pub fn discover(apps_dir: &Path, installed_apps: &[String], site_name: &str, default_user: &str) -> Option<Spa> {
         let mut routes: Vec<SpaRoute> = Vec::new();
         let mut redirects: Vec<Redirect> = Vec::new();
 
@@ -97,7 +100,7 @@ impl Spa {
         }
         // Longest base first so e.g. `/crm` is matched before a shorter overlapping prefix.
         routes.sort_by(|a, b| b.base.len().cmp(&a.base.len()));
-        Some(Spa { routes, redirects })
+        Some(Spa { routes, redirects, default_user: default_user.to_string() })
     }
 
     /// Number of registered SPA routes (for the startup log line).
@@ -118,24 +121,36 @@ impl Spa {
         }
         for rt in &self.routes {
             if path == rt.base || path.starts_with(&(rt.base.clone() + "/")) {
-                return Some(spa_html(rt.shell.clone()));
+                return Some(self.spa_html(rt.shell.clone()));
             }
         }
         None
     }
+
+    fn spa_html(&self, body: Vec<u8>) -> RawResp {
+        let mut headers = vec![
+            // SPA www pages are `no_cache=1`; never let a proxy/browser pin a stale boot.
+            ("Cache-Control".to_string(), "no-store".to_string()),
+        ];
+        // frappe-ui apps compute `session.isLoggedIn` from the `user_id` cookie (Guest == logged
+        // out). ferro serves every request as `default_user`, so reflect that identity in the
+        // cookies the SPA reads — otherwise the app bounces to /login on load.
+        if self.default_user != "Guest" {
+            let u = &self.default_user;
+            for c in [
+                format!("user_id={u}; Path=/; SameSite=Lax"),
+                format!("full_name={u}; Path=/; SameSite=Lax"),
+                "system_user=yes; Path=/; SameSite=Lax".to_string(),
+                "user_lang=en; Path=/; SameSite=Lax".to_string(),
+            ] {
+                headers.push(("Set-Cookie".to_string(), c));
+            }
+        }
+        RawResp { status: 200, content_type: "text/html; charset=utf-8".into(), body, headers }
+    }
 }
 
 // --------------------------------------------------------------------- responses
-
-fn spa_html(body: Vec<u8>) -> RawResp {
-    RawResp {
-        status: 200,
-        content_type: "text/html; charset=utf-8".into(),
-        body,
-        // SPA www pages are `no_cache=1`; never let a proxy/browser pin a stale boot.
-        headers: vec![("Cache-Control".into(), "no-store".into())],
-    }
-}
 
 fn redirect_301(location: &str) -> RawResp {
     RawResp {
@@ -278,10 +293,16 @@ fn resolve_www(apps_dir: &Path, app: &str, to_route: &str) -> Option<PathBuf> {
 
 fn render_shell(raw: &str, base: &str, site_name: &str) -> String {
     let csrf = util::random_name();
-    let boot_json = serde_json::to_string(&build_boot(base, site_name, &csrf)).unwrap_or_else(|_| "{}".into());
+    let boot = build_boot(base, site_name, &csrf);
+    let boot_obj = boot.as_object().cloned().unwrap_or_default();
+    let boot_json = serde_json::to_string(&boot).unwrap_or_else(|_| "{}".into());
 
-    // Drop `{% ... %}` control blocks, then substitute `{{ ... }}` expressions.
-    let no_blocks = sub_delims(raw, "{%", "%}", &|_| String::new());
+    // frappe-ui shells spread the boot dict onto `window` with `{% for key in boot %}
+    // window["{{ key }}"] = {{ boot[key] | tojson }}; {% endfor %}`. Expand that first (a plain
+    // `{% %}` drop would leave `window[""] = ;` → a SyntaxError that breaks the whole boot).
+    let expanded = expand_boot_loops(raw, &boot_obj);
+    // Drop remaining `{% ... %}` control blocks, then substitute `{{ ... }}` expressions.
+    let no_blocks = sub_delims(&expanded, "{%", "%}", &|_| String::new());
     let mut html = sub_delims(&no_blocks, "{{", "}}", &|expr| eval_expr(expr.trim(), &boot_json, site_name, &csrf));
 
     // Safety net for a shell with no csrf placeholder (frappe-ui's `request` reads window.csrf_token
@@ -312,6 +333,54 @@ fn build_boot(base: &str, site_name: &str, csrf: &str) -> Value {
         "system_timezone": "UTC",
         "timezone": { "system": "UTC", "user": "UTC" },
     })
+}
+
+/// Expand a `{% for <var> in boot %} … {% endfor %}` block by iterating the boot object's entries,
+/// substituting `{{ <var> }}` -> key and `{{ boot[<var>] | tojson }}` / `{{ boot[<var>] }}` -> the
+/// JSON-encoded value. frappe-ui shells use exactly this to spread each boot key onto `window`.
+/// Non-`boot` `{% for %}` loops (rare in these shells) are left for the generic `{% %}` drop.
+fn expand_boot_loops(src: &str, boot: &Map<String, Value>) -> String {
+    const FOR: &str = "{% for ";
+    const ENDFOR: &str = "{% endfor %}";
+    let mut out = String::with_capacity(src.len());
+    let mut rest = src;
+    while let Some(start) = rest.find(FOR) {
+        let hdr_end = match rest[start..].find("%}") {
+            Some(i) => start + i + 2,
+            None => break,
+        };
+        let header = &rest[start..hdr_end]; // e.g. "{% for key in boot %}"
+        let var = header[FOR.len()..]
+            .split(" in boot")
+            .next()
+            .map(str::trim)
+            .filter(|v| !v.is_empty() && header.contains(" in boot"));
+        let endfor = rest[hdr_end..].find(ENDFOR).map(|i| hdr_end + i);
+        match (var, endfor) {
+            (Some(var), Some(endfor)) => {
+                let body = &rest[hdr_end..endfor];
+                out.push_str(&rest[..start]);
+                for (k, v) in boot {
+                    let vj = serde_json::to_string(v).unwrap_or_else(|_| "null".into());
+                    out.push_str(
+                        &body
+                            .replace(&format!("{{{{ {var} }}}}"), k)
+                            .replace(&format!("{{{{{var}}}}}"), k)
+                            .replace(&format!("{{{{ boot[{var}] | tojson }}}}"), &vj)
+                            .replace(&format!("{{{{ boot[{var}] }}}}"), &vj),
+                    );
+                }
+                rest = &rest[endfor + ENDFOR.len()..];
+            }
+            _ => {
+                // not a `… in boot` loop: emit through this tag and continue scanning.
+                out.push_str(&rest[..hdr_end]);
+                rest = &rest[hdr_end..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Evaluate a `{{ ... }}` expression against the known context. Handles `expr | filter`,
@@ -412,7 +481,7 @@ mod tests {
     fn serves_base_and_subroutes_for_installed_apps() {
         let apps = fixture("serve");
         let installed = vec!["crm".to_string(), "gameplan".to_string(), "helpdesk".to_string()];
-        let spa = Spa::discover(&apps, &installed, "demo.site").expect("routes discovered");
+        let spa = Spa::discover(&apps, &installed, "demo.site", "Administrator").expect("routes discovered");
         assert_eq!(spa.route_count(), 3);
 
         // Base route serves the shell, with placeholders resolved (no raw Jinja leaks).
@@ -443,7 +512,7 @@ mod tests {
     #[test]
     fn applies_website_redirects() {
         let apps = fixture("redir");
-        let spa = Spa::discover(&apps, &["gameplan".to_string()], "demo.site").unwrap();
+        let spa = Spa::discover(&apps, &["gameplan".to_string()], "demo.site", "Administrator").unwrap();
         let r = spa.try_route("/teams/abc").expect("redirect matched");
         assert_eq!(r.status, 301);
         let loc = r.headers.iter().find(|(k, _)| k == "Location").map(|(_, v)| v.clone());
@@ -455,8 +524,34 @@ mod tests {
     fn uninstalled_apps_are_not_served() {
         let apps = fixture("gate");
         // crm present on disk but NOT in installed_apps -> no routes.
-        let spa = Spa::discover(&apps, &["frappe".to_string()], "demo.site");
+        let spa = Spa::discover(&apps, &["frappe".to_string()], "demo.site", "Administrator");
         assert!(spa.is_none(), "must not serve routes for uninstalled apps");
+        let _ = std::fs::remove_dir_all(apps.parent().unwrap());
+    }
+
+    #[test]
+    fn expands_boot_spread_loop() {
+        // The frappe-ui shell spreads each boot key onto `window` via a Jinja for-loop.
+        let shell = "<script>\n{% for key in boot %}\nwindow[\"{{ key }}\"] = {{ boot[key] | tojson }};\n{% endfor %}\n</script>";
+        let html = render_shell(shell, "/g", "demo.site");
+        assert!(!html.contains("{{") && !html.contains("{%"), "no Jinja left: {html}");
+        assert!(!html.contains("window[\"\"]"), "no empty-key assignment (the SyntaxError): {html}");
+        assert!(html.contains("window[\"site_name\"] = \"demo.site\";"), "site_name spread: {html}");
+        assert!(html.contains("window[\"csrf_token\"] = \""), "csrf_token spread: {html}");
+    }
+
+    #[test]
+    fn shell_response_sets_logged_in_cookie() {
+        let apps = fixture("cookie");
+        let spa = Spa::discover(&apps, &["gameplan".to_string()], "demo.site", "Administrator").unwrap();
+        let r = spa.try_route("/g").unwrap();
+        let cookies: Vec<&str> =
+            r.headers.iter().filter(|(k, _)| k == "Set-Cookie").map(|(_, v)| v.as_str()).collect();
+        assert!(cookies.iter().any(|c| c.starts_with("user_id=Administrator")), "user_id cookie: {cookies:?}");
+        // Guest identity must NOT mark the SPA logged in.
+        let guest = Spa::discover(&apps, &["gameplan".to_string()], "demo.site", "Guest").unwrap();
+        let rg = guest.try_route("/g").unwrap();
+        assert!(!rg.headers.iter().any(|(k, _)| k == "Set-Cookie"), "no login cookie as Guest");
         let _ = std::fs::remove_dir_all(apps.parent().unwrap());
     }
 

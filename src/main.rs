@@ -293,6 +293,20 @@ fn resolve_bench_site(sites_path: Option<&str>, site: Option<&str>) -> Option<(S
 }
 
 /// The Frappe sitename (= the Socket.IO namespace browsers connect to) from a site-dir-or-db arg.
+/// The forge `apps/` dir for a site arg (`<forge>/sites/<host>` or its `.db`), i.e. `<forge>/apps`.
+/// Returns None when that directory doesn't exist (e.g. a bare site with no apps symlink).
+fn site_apps_dir(arg: &str) -> Option<PathBuf> {
+    let p = Path::new(arg);
+    let site_dir = if p.is_dir() {
+        p.to_path_buf()
+    } else {
+        // <site>/db/<name>.db -> site dir is the grandparent
+        p.parent().and_then(|d| d.parent())?.to_path_buf()
+    };
+    let apps = site_dir.parent().and_then(|sites| sites.parent()).map(|forge| forge.join("apps"))?;
+    apps.is_dir().then_some(apps)
+}
+
 fn site_name_from(path: &str) -> String {
     let p = Path::new(path);
     let dir = if p.is_dir() {
@@ -589,23 +603,27 @@ fn serve(args: &[String]) {
     }
 
     let sitename = site_name_from(&path);
+    // The forge `apps/` dir, derived from the *site* path (`<forge>/sites/<host>` -> `<forge>/apps`).
+    // NB: do NOT derive this from --assets: in the signup deployment --assets points at a SHARED
+    // built tree (`/opt/ferro/assets`), not the forge's own `sites/assets`, so the apps live
+    // relative to the site, not the assets.
+    let apps_dir = site_apps_dir(&path);
 
     let (desk, spa) = if enable_desk {
         let adir = assets_dir.unwrap_or_else(|| default_assets_dir(&path));
         eprintln!("ferro desk: serving assets from {}", adir.display());
         // SPA frontends: serve each installed app's frappe-ui SPA at the routes its hooks.py
-        // declares (the apps/ dir sits two levels up from sites/assets). Installed-app gated so we
-        // don't serve a route for an app that's only symlinked-in via the shared mirror.
-        let spa = adir
-            .parent()
-            .and_then(|sites| sites.parent())
-            .map(|forge| forge.join("apps"))
-            .and_then(|apps_dir| spa::Spa::discover(&apps_dir, &load_installed_apps(&path), &sitename))
+        // declares. Installed-app gated so we don't serve a route for an app that's only
+        // symlinked-in via the shared mirror.
+        let spa = apps_dir
+            .as_ref()
+            .and_then(|ad| spa::Spa::discover(ad, &load_installed_apps(&path), &sitename, &default_user))
             .map(Arc::new);
         if let Some(s) = &spa {
             eprintln!("ferro spa: serving {} app SPA route(s)", s.route_count());
         }
-        (Some(Arc::new(desk::Desk::new(adir, desk_boot))), spa)
+        let installed = load_installed_apps(&path);
+        (Some(Arc::new(desk::Desk::new(adir, desk_boot, apps_dir.clone(), installed))), spa)
     } else {
         (None, None)
     };
@@ -811,7 +829,7 @@ fn handle(mut req: tiny_http::Request, con: &Connection, app: &App) {
             AuthOutcome::Ok(id) => id.user,
             AuthOutcome::Unauthorized => app.default_user.clone(),
         };
-        if let Some(raw) = desk::try_raw(desk, &user, &method, &url) {
+        if let Some(raw) = desk::try_raw(desk, con, &user, &method, &url) {
             return respond_raw(req, raw);
         }
     }
