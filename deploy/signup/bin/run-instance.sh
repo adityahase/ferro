@@ -50,8 +50,12 @@ if [ "$WEB_RUNTIME" = "ferrod" ]; then
   PY_BIN="${FERRO_RUNTIME_PY_BIN:-/opt/ferro/runtime/ferro-py}"
   if [ -x "$PY_BIN" ]; then
     RUNTIME_BIN="$PY_BIN"
-    # embedded CPython needs its libpython on the loader path + the shim/app sources discoverable
-    export LD_LIBRARY_PATH="${FERRO_PYLIB:-/opt/ferro/python/lib}:${LD_LIBRARY_PATH:-}"
+    # embedded CPython needs its libpython on the loader path, its stdlib via PYTHONHOME (the binary's
+    # build-time prefix won't exist here), and the shim/app sources discoverable. /opt/ferro/python is
+    # a 3.13 home (a symlink to the on-box pyenv 3.13.x is fine).
+    PYHOME="${FERRO_PYHOME:-/opt/ferro/python}"
+    export PYTHONHOME="$PYHOME"
+    export LD_LIBRARY_PATH="${FERRO_PYLIB:-$PYHOME/lib}:${LD_LIBRARY_PATH:-}"
     export FERRO_SHIM="${FERRO_SHIM:-/opt/ferro/stack/framework/shim}"
     export FERRO_REPOS="${FERRO_REPOS:-/opt/ferro/app-mirror}"
   else
