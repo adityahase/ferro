@@ -55,6 +55,39 @@ class Field:
         return self._col()
 
 
+class Func(Field):
+    """A SQL function expression, e.g. COUNT("name") or COALESCE("a", 0). Subclasses Field so it
+    flows through select()/_colsql() (alias via .as_()) exactly like a column. This is what
+    `frappe.query_builder.functions.Count/Sum/Max/...` return — without it the aggregate term
+    rendered empty and produced `SELECT "owner", FROM ...` (dangling comma)."""
+
+    def __init__(self, fname, *args):
+        super().__init__(fname)
+        self.fname = fname
+        self.args = args
+        self._distinct = False
+
+    def distinct(self):
+        # pypika's Count(x).distinct() -> COUNT(DISTINCT x). Chainable.
+        self._distinct = True
+        return self
+
+    def _col(self):
+        inner = ", ".join(_arg_sql(a) for a in self.args) if self.args else ""
+        if self._distinct:
+            inner = f"DISTINCT {inner}"
+        return f'{self.fname}({inner})'
+
+
+def _arg_sql(a):
+    # A function argument may be a column (Field), a nested Func, or a literal value.
+    if isinstance(a, Field):
+        return a._col()
+    if a == "*":
+        return "*"
+    return _lit(a)
+
+
 def _lit(v):
     if v is None:
         return "NULL"
@@ -209,10 +242,32 @@ class _GetQuery:
         self._doctype, self._fields, self._filters = doctype, fields, filters
         self._order_by, self._limit, self._limit_start = order_by, limit, limit_start
 
-    # a few callers chain refinements before .run(); keep them working.
+    # Callers chain refinements before .run(). We can't faithfully execute joins/extra selects over
+    # the native get_list path, so these degrade to no-ops (the base doctype query still runs) rather
+    # than raising AttributeError — what got_discussions et al. need to not 500. on()/get_sql() let a
+    # `.left_join(X).on(...)` chain keep flowing.
     def where(self, *a, **k):
         return self
     def orderby(self, *a, **k):
+        return self
+    def select(self, *a, **k):
+        return self
+    def groupby(self, *a, **k):
+        return self
+    def distinct(self, *a, **k):
+        return self
+    def join(self, *a, **k):
+        return self
+    def left_join(self, *a, **k):
+        return self
+    def inner_join(self, *a, **k):
+        return self
+    def right_join(self, *a, **k):
+        return self
+    def on(self, *a, **k):
+        return self
+    def offset(self, n):
+        self._limit_start = n
         return self
     def limit(self, n):
         self._limit = n
@@ -231,14 +286,28 @@ class _GetQuery:
         return [tuple(r.get(f) for f in flds) for r in rows]
 
 
+# SQL-name overrides for functions whose Python name differs from the SQL keyword.
+_FN_SQL = {"Count": "COUNT", "Sum": "SUM", "Max": "MAX", "Min": "MIN", "Avg": "AVG",
+           "Coalesce": "COALESCE", "IfNull": "IFNULL", "Ifnull": "IFNULL", "Abs": "ABS",
+           "Concat": "CONCAT", "Concat_ws": "CONCAT_WS", "GroupConcat": "GROUP_CONCAT",
+           "Now": "DATETIME", "Replace": "REPLACE", "Cast": "CAST", "Cast_": "CAST",
+           "Date": "DATE", "Timestamp": "DATETIME", "DateFormat": "STRFTIME", "Locate": "INSTR"}
+
+
+def _make_fn(name):
+    sql = _FN_SQL.get(name, name.upper())
+
+    def _fn(*a, **k):
+        return Func(sql, *a)
+
+    return _fn
+
+
 def __getattr__(name):
-    # functions like Count, Sum, Max, etc. -> aggregate stubs that still compile to a column
-    if name in ("Count", "Sum", "Max", "Min", "Avg", "Coalesce", "IfNull", "Abs",
-                "Function", "CustomFunction", "Case", "Cast", "Concat", "Date", "Now",
-                "Tuple", "Interval", "DatePart", "Extract", "Locate", "GroupConcat"):
-        def _fn(*a, **k):
-            return Field(name.lower())
-        return _fn
+    # functions like Count, Sum, Max, etc. -> real SQL function expressions (render FUNC(args)).
+    if name in _FN_SQL or name in ("Function", "CustomFunction", "Case", "Extract", "DatePart",
+                                   "Tuple", "Interval", "Match", "Now"):
+        return _make_fn(name)
     # everything else (JoinType, Order, Criterion helpers, ...) -> permissive Stub type
     from frappe._lazy import stub_attr
     return stub_attr(name)

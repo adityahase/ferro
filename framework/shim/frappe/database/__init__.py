@@ -50,13 +50,20 @@ class Database:
             return None
         return doc.get(fieldname)
 
-    def get_all(self, doctype, **kwargs):
+    def get_all(self, doctype, *args, **kwargs):
         import frappe
+        # Frappe's db.get_all takes (doctype, filters, fields, ...) positionally — but a lot of app
+        # code (e.g. gameplan.api.unread_notifications) calls db.get_all(dt, FIELDS, FILTERS). The
+        # real query layer disambiguates by shape: a list -> fields, a dict/list-of-lists -> filters.
+        for a in args:
+            if isinstance(a, (list, tuple)) and not (a and isinstance(a[0], (list, tuple))):
+                kwargs.setdefault("fields", list(a))
+            else:
+                kwargs.setdefault("filters", a)
         return frappe.get_all(doctype, **kwargs)
 
-    def get_list(self, doctype, **kwargs):
-        import frappe
-        return frappe.get_all(doctype, **kwargs)
+    def get_list(self, doctype, *args, **kwargs):
+        return self.get_all(doctype, *args, **kwargs)
 
     def exists(self, doctype, name=None, cache=False):
         if isinstance(doctype, dict):

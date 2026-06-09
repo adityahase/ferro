@@ -916,6 +916,61 @@ fn map_orm_err(dev: bool, e: OrmError) -> (u16, Value) {
     }
 }
 
+/// Build a Frappe-**v2** error envelope. v2 diverges from v1: errors go in an `errors` array of
+/// `{type, message, exception?}` objects (not `exc_type`/`_server_messages`), which is what
+/// frappe-ui's v2 request layer reads. Mirrors `frappe/utils/response.py` ApiVersion.V2.
+fn err_v2(dev: bool, status: u16, exc_type: &str, msg: String) -> (u16, Value) {
+    let mut e = Map::new();
+    e.insert("type".into(), Value::from(exc_type.to_string()));
+    e.insert("message".into(), Value::from(msg.clone()));
+    if dev {
+        e.insert("exception".into(), Value::from(format!("{exc_type}: {msg}")));
+    }
+    (status, json!({ "errors": [Value::Object(e)] }))
+}
+
+/// Re-map an ORM error into the v2 error envelope (same status mapping as `map_orm_err`).
+fn map_orm_err_v2(dev: bool, e: OrmError) -> (u16, Value) {
+    match e {
+        OrmError::NotFound(m) => err_v2(dev, 404, "DoesNotExistError", m),
+        OrmError::Validation(m) => err_v2(dev, 417, "ValidationError", m),
+        OrmError::Duplicate(m) => err_v2(dev, 409, "DuplicateEntryError", m),
+        OrmError::Db(e) => {
+            let m = if dev { e.to_string() } else { "Internal Server Error".to_string() };
+            err_v2(dev, 500, "DatabaseError", m)
+        }
+    }
+}
+
+/// Convert a v1-shaped handler response into a v2 one. v1 method handlers return either
+/// `{"message": X}` (the desk/ferro convention) or `{"exc_type":..,"_server_messages":..}` on
+/// error. v2 wants `{"data": X}` on success and `{"errors":[..]}` on error. CRUD handlers return
+/// `{"data": X}` already, so that key passes through unchanged.
+fn v1_to_v2(dev: bool, status: u16, body: Value) -> (u16, Value) {
+    if status >= 400 {
+        // Re-shape a v1 error envelope into v2's errors[] array.
+        let exc = body.get("exc_type").and_then(|v| v.as_str()).unwrap_or("ServerError").to_string();
+        // Pull the human message out of v1's _server_messages (a JSON array of JSON strings).
+        let msg = body
+            .get("_server_messages")
+            .and_then(|v| v.as_str())
+            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+            .and_then(|v| v.into_iter().next())
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .and_then(|o| o.get("message").and_then(|m| m.as_str()).map(|s| s.to_string()))
+            .or_else(|| body.get("exception").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| exc.clone());
+        return err_v2(dev, status, &exc, msg);
+    }
+    // Success: unwrap {"message": X} / {"data": X}; otherwise wrap the whole body as data.
+    let data = body
+        .get("message")
+        .or_else(|| body.get("data"))
+        .cloned()
+        .unwrap_or(body);
+    (status, json!({ "data": data }))
+}
+
 fn route(
     con: &Connection,
     app: &App,
@@ -972,8 +1027,222 @@ fn route(
             route_method(app, &ident, &segments)
         }
         Some("resource") => route_resource(con, app, &ident, method, &segments, &params, body, content_type),
+        // Frappe v2 REST API (`/api/v2/document/*`, `/api/v2/method/*`). frappe-ui's request layer
+        // (used by Gameplan/CRM/Helpdesk frontends) talks v2; it differs from v1 only in the URL
+        // shape and the response/error envelope, so these delegate to the same handlers.
+        Some("v2") => match segments.get(2).map(|s| s.as_str()) {
+            Some("document") => route_v2_document(con, app, &ident, method, &segments, &params, body, content_type),
+            Some("method") => {
+                // Two forms: `/api/v2/method/<dotted>` (segment 3 is the whole method name) and the
+                // doctype-scoped `/api/v2/method/<doctype>/<method>` (segments 3 + 4), which runs the
+                // method on the doctype's controller module. Resolve the latter to a dotted path.
+                let seg3 = segments.get(3).map(|s| s.as_str()).unwrap_or("");
+                let resolved: Option<String> = match segments.get(4).map(|s| s.as_str()) {
+                    Some(meth) if !meth.is_empty() => {
+                        #[cfg(feature = "python")]
+                        {
+                            app.pyfall.as_ref().and_then(|pf| pf.resolve_doctype_method(seg3, meth))
+                        }
+                        #[cfg(not(feature = "python"))]
+                        {
+                            let _ = meth;
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                let mname = resolved.as_deref().unwrap_or(seg3);
+                route_v2_method(con, app, &ident, method, mname, &params, body, content_type)
+            }
+            _ => err_v2(app.dev, 404, "NotFound", format!("Unknown path /{}", segments.join("/"))),
+        },
         _ => err(app.dev, 404, "NotFound", format!("Unknown path /{}", segments.join("/"))),
     }
+}
+
+/// `/api/v2/document/<doctype>[/<name>]` — the v2 CRUD surface. Same permission model and ORM
+/// calls as `route_resource`; only the path offset (doctype at segment 3, not 2) and the response
+/// envelope differ. Lists carry `has_next_page`; creates return 200 with the new doc as `data`.
+#[allow(clippy::too_many_arguments)]
+fn route_v2_document(
+    con: &Connection,
+    app: &App,
+    ident: &auth::Identity,
+    method: &str,
+    segments: &[String],
+    params: &HashMap<String, String>,
+    body: &str,
+    content_type: Option<&str>,
+) -> (u16, Value) {
+    let dev = app.dev;
+    let doctype = match segments.get(3) {
+        Some(d) if !d.is_empty() => d.clone(),
+        _ => return err_v2(dev, 404, "NotFound", "No doctype in path".into()),
+    };
+    let name: Option<String> = if segments.len() > 4 {
+        Some(segments[4..].join("/"))
+    } else {
+        None
+    };
+
+    let meta = match app.metas.get(con, &doctype) {
+        Ok(m) => m,
+        Err(meta::MetaError::NotFound(d)) => return err_v2(dev, 404, "DoesNotExistError", format!("DocType {d} not found")),
+        Err(meta::MetaError::Db(e)) => return map_orm_err_v2(dev, OrmError::Db(e)),
+    };
+
+    let ptype = auth::ptype_for_method(method);
+    let perm = auth::permission(con, &meta, &ident.user, ptype);
+    if !perm.allowed {
+        return err_v2(dev, 403, "PermissionError", format!("No '{ptype}' permission for {} on {doctype}", ident.user));
+    }
+    let acl = ReadAcl {
+        permlevels: auth::readable_permlevels(con, &meta, &ident.user),
+    };
+    let owner_violation = |n: &str| -> bool {
+        if !perm.only_if_owner {
+            return false;
+        }
+        match orm::doc_owner(con, &meta, n) {
+            Some(o) => !auth::owns(&o, &ident.user),
+            None => false,
+        }
+    };
+
+    match (method, name) {
+        ("GET", None) => {
+            // v2 lists report `has_next_page` by over-fetching one row past `limit`.
+            let mut q = build_list_query(params);
+            // frappe-ui list calls request linked/child fields the native get_list can't do
+            // (`team.title as team_title`, `{"members":["user"]}` — the latter arrives JSON-parsed as
+            // a non-string and is dropped by build_list_query already). Keep only this doctype's real
+            // physical columns so the query runs instead of 417-ing; the SPA tolerates the omissions.
+            if !q.fields.is_empty() {
+                q.fields.retain(|f| f == "name" || meta.fields.iter().any(|fd| &fd.fieldname == f));
+                if q.fields.is_empty() {
+                    q.fields.push("name".to_string());
+                }
+            }
+            let page_len = q.limit_page_length;
+            if page_len > 0 {
+                q.limit_page_length = page_len + 1;
+            }
+            let owner_scope = if perm.only_if_owner { Some(ident.user.as_str()) } else { None };
+            match orm::get_list(con, &meta, &acl, &q, owner_scope) {
+                Ok(Value::Array(mut rows)) => {
+                    let has_next = page_len > 0 && rows.len() as i64 > page_len;
+                    if has_next {
+                        rows.truncate(page_len as usize);
+                    }
+                    (200, json!({ "data": rows, "has_next_page": has_next }))
+                }
+                Ok(other) => (200, json!({ "data": other, "has_next_page": false })),
+                Err(e) => map_orm_err_v2(dev, e),
+            }
+        }
+        ("GET", Some(n)) => {
+            if owner_violation(&n) {
+                return err_v2(dev, 403, "PermissionError", format!("No permission for {} {n}", meta.name));
+            }
+            match orm::get_doc(con, &meta, &acl, &n) {
+                Ok(data) => (200, json!({ "data": data })),
+                Err(e) => map_orm_err_v2(dev, e),
+            }
+        }
+        ("POST", None) => {
+            let data = match build_doc_data(content_type, body, params) {
+                Ok(d) => d,
+                Err(e) => return err_v2(dev, 417, "ValidationError", e),
+            };
+            match orm::insert(con, &meta, &acl, &data, &ident.user) {
+                Ok(doc) => {
+                    let nm = doc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let modified = doc.get("modified").and_then(|v| v.as_str()).unwrap_or("");
+                    notify_write(app, &meta.name, nm, &ident.user, modified);
+                    (200, json!({ "data": doc }))
+                }
+                Err(e) => map_orm_err_v2(dev, e),
+            }
+        }
+        ("PUT", Some(n)) | ("PATCH", Some(n)) => {
+            if owner_violation(&n) {
+                return err_v2(dev, 403, "PermissionError", format!("No permission for {} {n}", meta.name));
+            }
+            let data = match build_doc_data(content_type, body, params) {
+                Ok(d) => d,
+                Err(e) => return err_v2(dev, 417, "ValidationError", e),
+            };
+            match orm::update(con, &meta, &acl, &n, &data, &ident.user) {
+                Ok(doc) => {
+                    let modified = doc.get("modified").and_then(|v| v.as_str()).unwrap_or("");
+                    notify_write(app, &meta.name, &n, &ident.user, modified);
+                    (200, json!({ "data": doc }))
+                }
+                Err(e) => map_orm_err_v2(dev, e),
+            }
+        }
+        ("DELETE", Some(n)) => {
+            if owner_violation(&n) {
+                return err_v2(dev, 403, "PermissionError", format!("No permission for {} {n}", meta.name));
+            }
+            match orm::delete(con, &meta, &n) {
+                Ok(()) => {
+                    notify_write(app, &meta.name, &n, &ident.user, "");
+                    (202, json!({ "data": "ok" }))
+                }
+                Err(e) => map_orm_err_v2(dev, e),
+            }
+        }
+        (m, _) => err_v2(dev, 405, "MethodNotAllowed", format!("{m} not allowed here")),
+    }
+}
+
+/// `/api/v2/method/<dotted>` — the v2 RPC surface. Dispatches through the SAME tiers as v1
+/// (`ferro_method` → desk's curated `frappe.*` → ferrod's Python fallthrough), then re-shapes the
+/// v1 envelope into v2's `{"data": ...}` / `{"errors": [...]}`. A couple of v2-only method names
+/// (login/logout/ping) the frontend calls are handled up front.
+#[allow(clippy::too_many_arguments)]
+fn route_v2_method(
+    con: &Connection,
+    app: &App,
+    ident: &auth::Identity,
+    method: &str,
+    mname: &str,
+    params: &HashMap<String, String>,
+    body: &str,
+    content_type: Option<&str>,
+) -> (u16, Value) {
+    let dev = app.dev;
+    // v2 method names the frappe-ui boot calls directly.
+    match mname {
+        "ping" | "frappe.ping" => return (200, json!({ "data": "pong" })),
+        "login" => return (200, json!({ "data": "Logged In" })),
+        "logout" | "frappe.auth.logout" => return (200, json!({ "data": null })),
+        "frappe.auth.get_logged_user" => return (200, json!({ "data": ident.user })),
+        _ => {}
+    }
+
+    // Tier 1: ferro's own subsystem methods.
+    if let Some((status, body_v)) = ferro_method(app, ident, mname, params) {
+        return v1_to_v2(dev, status, body_v);
+    }
+    // Tier 2: desk's curated frappe.* whitelist (list/form/boot), mapped onto ferro's ORM.
+    if app.desk.is_some() {
+        if let Some((status, body_v)) = desk::route_method(con, &app.metas, &ident.user, mname, params, body, content_type, method) {
+            return v1_to_v2(dev, status, body_v);
+        }
+    }
+    // Tier 3 (ferrod): installed apps' whitelisted methods run their real Python.
+    #[cfg(feature = "python")]
+    if let Some(pf) = &app.pyfall {
+        if pf.has(mname) {
+            let args = pyfall::args_json(params, body);
+            let (status, body_v) = pf.call(con, dev, mname, &args, &ident.user);
+            return v1_to_v2(dev, status, body_v);
+        }
+    }
+
+    err_v2(dev, 404, "NotFound", format!("Method '{mname}' not implemented"))
 }
 
 /// ferro-native methods for observing and driving the internal backend subsystems (cache, jobs,

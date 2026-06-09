@@ -301,6 +301,22 @@ def swallowed_count():
     return len(_SWALLOWED)
 
 
+def resolve_doctype_method(doctype, method):
+    """Mirror Frappe's v2 `/api/method/<doctype>/<method>` resolution: a doctype-scoped method runs
+    on the doctype's controller MODULE (e.g. `GP Project`+`get_joined_spaces` ->
+    `gameplan.gameplan.doctype.gp_project.gp_project.get_joined_spaces`). Returns the dotted path, or
+    None if the doctype is unknown."""
+    mod = _DOCTYPE_MODULE.get(doctype)
+    if not mod:
+        # not yet in the map (lazy mode): import-and-register the controller, which fills it.
+        try:
+            lazy_import_controller(doctype)
+        except Exception:
+            pass
+        mod = _DOCTYPE_MODULE.get(doctype)
+    return f"{mod}.{method}" if mod else None
+
+
 def _resolve(dotted):
     if dotted in _RESOLVE_CACHE:
         return _RESOLVE_CACHE[dotted]

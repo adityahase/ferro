@@ -146,13 +146,139 @@ def get_last_doc(doctype, filters=None, order_by="creation desc"):
 
 
 def get_all(doctype, filters=None, fields=None, order_by=None, limit_start=0,
-            limit_page_length=0, limit=None, pluck=None, **kwargs):
+            limit_page_length=0, limit=None, pluck=None, distinct=False, group_by=None, **kwargs):
     if limit is not None:
         limit_page_length = limit
+    # Aggregate fields (e.g. [{"COUNT":"name","as":"count"}]) and child-table-join filters (e.g.
+    # {"roles.role": [...]}) can't go through the native get_list path (plain column reads). Compile
+    # them to SQL and run via the raw escape hatch. This is what gameplan's unread_notifications and
+    # get_user_info need.
+    if _needs_sql(fields, filters, group_by, distinct):
+        return _get_all_sql(doctype, filters, fields, order_by, limit_start,
+                            limit_page_length, pluck, distinct, group_by)
     fj = _json.dumps(fields) if fields else None
     flj = _json.dumps(filters) if filters else None
     rows = _rt.get_list(doctype, flj, fj, order_by, int(limit_start or 0), int(limit_page_length or 0))
     rows = [_dict(r) for r in rows]
+    if pluck:
+        return [r.get(pluck) for r in rows]
+    return rows
+
+
+_AGG_KEYS = ("count", "sum", "avg", "max", "min")
+
+
+def _needs_sql(fields, filters, group_by, distinct):
+    if group_by or distinct:
+        return True
+    if isinstance(fields, (list, tuple)):
+        for f in fields:
+            if isinstance(f, dict):
+                return True
+            if isinstance(f, str) and ("(" in f or "." in f):
+                return True  # COUNT(name) / `tabX`.field — needs raw SQL
+    # a child-table-join filter key ("roles.role") — the native path only knows parent columns.
+    if isinstance(filters, dict):
+        for k in filters:
+            if isinstance(k, str) and "." in k:
+                return True
+    return False
+
+
+def _q(ident):
+    return '"' + str(ident).replace('"', '""') + '"'
+
+
+def _lit(v):
+    if v is None:
+        return "NULL"
+    if isinstance(v, bool):
+        return "1" if v else "0"
+    if isinstance(v, (int, float)):
+        return str(v)
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def _field_sql(f):
+    """Render one entry of `fields` to a SQL select term. Supports plain columns, the
+    aggregate-dict form [{"COUNT":"name","as":"count"}], and raw function strings."""
+    if isinstance(f, dict):
+        alias = f.get("as")
+        for k, v in f.items():
+            if k == "as":
+                continue
+            fn = k.upper()
+            inner = "*" if v in ("*", "name", None) and fn == "COUNT" and v != "name" else _q(v)
+            term = f"{fn}({inner})"
+            return f'{term} AS {_q(alias)}' if alias else term
+        return "1"
+    s = str(f)
+    if "(" in s or " as " in s.lower() or "`" in s:
+        return s  # already SQL-ish (COUNT(name) AS count, etc.)
+    return _q(s)
+
+
+def _filter_clauses(doctype, filters):
+    """Compile a filters dict into (where_sql, joins). Child-table keys like 'roles.role' become an
+    EXISTS subquery against the child table (parent==outer.name)."""
+    clauses = []
+    for key, cond in (filters or {}).items():
+        op, val = "=", cond
+        if isinstance(cond, (list, tuple)) and len(cond) == 2:
+            op, val = cond
+        op = {"=": "=", "!=": "!=", ">": ">", "<": "<", ">=": ">=", "<=": "<=",
+              "like": "LIKE", "in": "IN", "not in": "NOT IN"}.get(str(op).lower(), "=")
+        if "." in str(key):
+            # child-table join: <fieldname>.<childcol> -> EXISTS over the child doctype's table.
+            child_field, child_col = str(key).split(".", 1)
+            child_dt = _child_doctype(doctype, child_field)
+            child_tab = "tab" + (child_dt or child_field)
+            if op in ("IN", "NOT IN"):
+                vals = ", ".join(_lit(v) for v in (val or [])) or "NULL"
+                inner = f'{_q(child_col)} {op} ({vals})'
+            else:
+                inner = f'{_q(child_col)} {op} {_lit(val)}'
+            clauses.append(
+                f'EXISTS (SELECT 1 FROM {_q(child_tab)} WHERE {_q(child_tab)}."parent" = '
+                f'{_q("tab" + doctype)}."name" AND {inner})')
+        else:
+            if op in ("IN", "NOT IN"):
+                vals = ", ".join(_lit(v) for v in (val or [])) or "NULL"
+                clauses.append(f'{_q(key)} {op} ({vals})')
+            else:
+                clauses.append(f'{_q(key)} {op} {_lit(val)}')
+    return " AND ".join(clauses)
+
+
+def _child_doctype(parent, fieldname):
+    """Resolve the child DocType a Table/Table-MultiSelect field points at (options)."""
+    try:
+        meta = get_meta(parent)
+        for df in getattr(meta, "fields", []):
+            if df.get("fieldname") == fieldname and df.get("fieldtype", "").startswith("Table"):
+                return df.get("options")
+    except Exception:
+        pass
+    return None
+
+
+def _get_all_sql(doctype, filters, fields, order_by, limit_start, limit_page_length,
+                 pluck, distinct, group_by):
+    cols = ", ".join(_field_sql(f) for f in fields) if fields else "*"
+    distinct_kw = "DISTINCT " if distinct else ""
+    sql = f'SELECT {distinct_kw}{cols} FROM {_q("tab" + doctype)}'
+    where = _filter_clauses(doctype, filters)
+    if where:
+        sql += f' WHERE {where}'
+    if group_by:
+        sql += f' GROUP BY {_q(group_by) if "." not in str(group_by) and "(" not in str(group_by) else group_by}'
+    if order_by:
+        sql += f' ORDER BY {order_by}'
+    if limit_page_length:
+        sql += f' LIMIT {int(limit_page_length)}'
+    if limit_start:
+        sql += f' OFFSET {int(limit_start)}'
+    rows = [_dict(r) for r in _rt.sql(sql, None, True)]
     if pluck:
         return [r.get(pluck) for r in rows]
     return rows

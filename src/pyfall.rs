@@ -63,6 +63,17 @@ impl PyFall {
         self.whitelisted.contains(method)
     }
 
+    /// Resolve the v2 doctype-scoped method form (`/api/v2/method/<doctype>/<method>`) to its
+    /// controller-module dotted path (e.g. `GP Project` + `get_joined_spaces` ->
+    /// `gameplan.…doctype.gp_project.gp_project.get_joined_spaces`). Returns None if unknown.
+    pub fn resolve_doctype_method(&self, doctype: &str, method: &str) -> Option<String> {
+        Python::with_gil(|py| {
+            let boot = py.import("ferro_boot").ok()?;
+            let res = boot.call_method1("resolve_doctype_method", (doctype, method)).ok()?;
+            res.extract::<Option<String>>().ok().flatten()
+        })
+    }
+
     /// Run a whitelisted method under the GIL, sharing `con` so its ferro_rt reads/writes see the
     /// request's SQLite state. Returns a `{"message": …}` success envelope or a Frappe error one.
     pub fn call(&self, con: &Connection, dev: bool, method: &str, args_json: &str, user: &str) -> (u16, Value) {
