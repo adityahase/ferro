@@ -194,6 +194,43 @@ from_ = _Builder().from_
 DocType = lambda name: Table(name)
 
 
+def get_query(doctype, fields=None, filters=None, order_by=None, distinct=False,
+              group_by=None, limit=None, limit_start=0, offset=None, **kwargs):
+    """frappe.qb.get_query(...) — Frappe's high-level query helper (used by app controllers like
+    crm.api.session.get_users). We don't reimplement its full permission/link machinery; we route to
+    the same native get_list path `frappe.get_all` uses, which is what these read queries need.
+    Returns a runnable wrapper so the usual `.run(as_dict=1)` works."""
+    return _GetQuery(doctype, fields, filters, order_by,
+                     0 if limit is None else limit, limit_start or offset or 0)
+
+
+class _GetQuery:
+    def __init__(self, doctype, fields, filters, order_by, limit, limit_start):
+        self._doctype, self._fields, self._filters = doctype, fields, filters
+        self._order_by, self._limit, self._limit_start = order_by, limit, limit_start
+
+    # a few callers chain refinements before .run(); keep them working.
+    def where(self, *a, **k):
+        return self
+    def orderby(self, *a, **k):
+        return self
+    def limit(self, n):
+        self._limit = n
+        return self
+
+    def run(self, as_dict=False, as_list=False, pluck=None):
+        import frappe
+        rows = frappe.get_all(self._doctype, filters=self._filters, fields=self._fields,
+                              order_by=self._order_by, limit=self._limit,
+                              limit_start=self._limit_start, pluck=pluck)
+        if pluck:
+            return rows
+        if as_dict:
+            return rows  # already attribute-accessible _dict rows
+        flds = self._fields or ["name"]
+        return [tuple(r.get(f) for f in flds) for r in rows]
+
+
 def __getattr__(name):
     # functions like Count, Sum, Max, etc. -> aggregate stubs that still compile to a column
     if name in ("Count", "Sum", "Max", "Min", "Avg", "Coalesce", "IfNull", "Abs",
