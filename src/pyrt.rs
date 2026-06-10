@@ -238,6 +238,22 @@ fn insert(py: Python<'_>, doctype: &str, data_json: &str) -> PyResult<PyObject> 
     })
 }
 
+/// Raw insert — Frappe's `db_insert`: no link validation (bootstrap fixtures reference rows that
+/// may not exist yet / at all). Otherwise identical to `insert`.
+#[pyfunction]
+fn raw_insert(py: Python<'_>, doctype: &str, data_json: &str) -> PyResult<PyObject> {
+    with_con(|con| {
+        let meta = meta_of(con, doctype)?;
+        let data = match parse_json(data_json)? {
+            Value::Object(m) => m,
+            _ => return Err(PyValueError::new_err("insert data must be an object")),
+        };
+        let v = orm::with_skip_link_validation(|| orm::insert(con, &meta, &ReadAcl::all(), &data, &cur_user()))
+            .map_err(orm_err)?;
+        Ok(json_to_py(py, &v))
+    })
+}
+
 #[pyfunction]
 fn update(py: Python<'_>, doctype: &str, name: &str, data_json: &str) -> PyResult<PyObject> {
     with_con(|con| {
@@ -389,6 +405,7 @@ pub fn ferro_rt(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(exists, m)?)?;
     m.add_function(wrap_pyfunction!(count, m)?)?;
     m.add_function(wrap_pyfunction!(insert, m)?)?;
+    m.add_function(wrap_pyfunction!(raw_insert, m)?)?;
     m.add_function(wrap_pyfunction!(update, m)?)?;
     m.add_function(wrap_pyfunction!(set_value, m)?)?;
     m.add_function(wrap_pyfunction!(delete, m)?)?;

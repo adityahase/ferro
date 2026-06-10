@@ -428,6 +428,7 @@ def run_setup_wizard(args_json):
     Accounts + defaults (the interactive wizard's outcome). Once a Company exists, ERPNext reports
     setup as complete and the Desk wizard correctly stays hidden. Returns a JSON status."""
     args = json.loads(args_json) if args_json else {}
+    args = frappe._dict(args)  # ERPNext's setup ops use attribute access (args.fy_start_date, …)
     try:
         mod = importlib.import_module("erpnext.setup.setup_wizard.setup_wizard")
     except Exception as e:

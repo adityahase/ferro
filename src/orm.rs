@@ -675,7 +675,25 @@ fn validate_link(
 }
 
 /// Validate every Link / Dynamic Link field present in `data` against `meta`.
+thread_local! {
+    /// When set, insert paths skip link validation — mirrors Frappe's low-level `db_insert`
+    /// (a raw DB write with no Document validation), used for self-referential bootstrap fixtures
+    /// (e.g. ERPNext's UOM conversion data references UOMs not in uom_data.json).
+    static SKIP_LINK_VALIDATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with link validation suppressed (for `db_insert`-style raw writes).
+pub fn with_skip_link_validation<R>(f: impl FnOnce() -> R) -> R {
+    SKIP_LINK_VALIDATION.with(|c| c.set(true));
+    let r = f();
+    SKIP_LINK_VALIDATION.with(|c| c.set(false));
+    r
+}
+
 fn validate_links(con: &Connection, meta: &Meta, data: &Map<String, Value>) -> Result<(), OrmError> {
+    if SKIP_LINK_VALIDATION.with(|c| c.get()) {
+        return Ok(());
+    }
     for f in &meta.fields {
         if matches!(f.fieldtype.as_str(), "Link" | "Dynamic Link") {
             if let Some(v) = data.get(&f.fieldname) {

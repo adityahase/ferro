@@ -16,13 +16,16 @@ from frappe.model.meta import Meta
 from frappe.exceptions import NameError as _DuplicateName  # frappe's, raised on a name conflict
 
 
-def _native_insert(doctype, data):
+def _native_insert(doctype, data, raw=False):
     """Insert via ferro_rt, mapping the native "already exists" ValueError to frappe.NameError —
-    real Frappe raises NameError on a duplicate name, and idempotent installers catch exactly that."""
+    real Frappe raises NameError on a duplicate name, and idempotent installers catch exactly that.
+    `raw=True` -> db_insert semantics (no link validation)."""
     if _rt is None:
         return data
+    payload = _json.dumps(data, default=str)
+    fn = getattr(_rt, "raw_insert", None) if raw else None
     try:
-        return _rt.insert(doctype, _json.dumps(data, default=str))
+        return fn(doctype, payload) if fn else _rt.insert(doctype, payload)
     except ValueError as e:
         if "already exists" in str(e):
             raise _DuplicateName(str(e))
@@ -269,7 +272,7 @@ class Document(BaseDocument):
         """Low-level insert (real Frappe: no validate/hooks). The shim routes it to the same native
         insert; close enough for the bootstrap inserts (UOM, defaults) that use it."""
         data = self.as_dict()
-        saved = _native_insert(self.get("doctype"), data)
+        saved = _native_insert(self.get("doctype"), data, raw=True)
         self.update(dict(saved))
         self.__dict__["__islocal"] = False
         return self
