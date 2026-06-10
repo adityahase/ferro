@@ -138,6 +138,12 @@ DESK_DESC = {
 # the tenant to the "ferrod" runtime tier, where ferro embeds CPython and auto-routes that app's
 # whitelisted /api/method/<app>.* calls into real controller Python — so the SPA actually works.
 SPA_APPS = {"crm", "gameplan", "helpdesk"}
+# Apps whose real Python (controllers / setup) must run -> ferrod tier. Lazy CPython boot keeps a
+# Desk-only/browse-only tenant at the pure-Rust footprint until an app method is actually called.
+FERROD_APPS = SPA_APPS | {"erpnext", "hrms"}
+# Apps that run a programmatic setup_complete at provision time so the site is "set up" (a Company
+# exists -> ERPNext reports setup complete -> the Desk setup wizard correctly stays hidden).
+SETUP_WIZARD_APPS = {"erpnext", "hrms"}
 # Each SPA app's entry route (its hooks.py website_route_rules base), for post-signup deep links.
 APP_ROUTES = {"crm": "/crm", "gameplan": "/g", "helpdesk": "/helpdesk"}
 
@@ -483,15 +489,33 @@ def provision(sub, apps):
             else:
                 _ok(s, "core Desk workspaces ready")
 
-            # SPA apps (crm/gameplan/helpdesk) need their real Python API. Flip the tenant to the
-            # ferrod runtime tier so /api/method/<app>.* runs real controllers; the launcher uses the
-            # python-enabled ferro (and falls back to pure-Rust if it isn't staged).
-            if set(apps) & SPA_APPS:
+            # Apps with real Python (SPA APIs, ERPNext controllers/setup) need the ferrod tier so
+            # /api/method/<app>.* runs real controllers; lazy CPython boot keeps it cheap. The
+            # launcher uses the python-enabled ferro (falls back to pure-Rust if it isn't staged).
+            if set(apps) & FERROD_APPS:
                 s = _step(job, "runtime", "enabling real app methods")
                 if set_site_config(forge, host, web_runtime="ferrod"):
                     _ok(s, "ferrod tier (live app APIs)")
                 else:
                     _ok(s, "default runtime")
+
+            # ERPNext-style apps: run the programmatic setup wizard so a Company exists and the site
+            # reports setup complete (the Desk wizard then correctly stays hidden). Best-effort.
+            if set(apps) & SETUP_WIZARD_APPS:
+                s = _step(job, "setup", "running setup wizard")
+                site_dir = os.path.join(forge, "sites", host)
+                py_bin = envv("FERRO_RUNTIME_PY_BIN", "/opt/ferro/runtime/ferro-py")
+                if os.path.exists(py_bin):
+                    pyhome = envv("FERRO_PYHOME", "/opt/ferro/python")
+                    senv = dict(env)
+                    senv["PYTHONHOME"] = pyhome
+                    senv["LD_LIBRARY_PATH"] = f"{pyhome}/lib:" + senv.get("LD_LIBRARY_PATH", "")
+                    senv["FERRO_SHIM"] = os.path.join(FERRO_HOME, "framework", "shim")
+                    senv["FERRO_REPOS"] = APP_MIRROR
+                    rc, out = sh([py_bin, "setup-wizard", site_dir], env=senv, cwd=forge, timeout=240)
+                    _ok(s, "company + defaults created" if rc == 0 else "setup partial")
+                else:
+                    _ok(s, "skipped (no python runtime)")
 
             s = _step(job, "data", "adding demo rows")
             ferro(["populate", "--site", host, "--rows", str(POPULATE_ROWS)],
