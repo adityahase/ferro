@@ -135,12 +135,16 @@ struct Clause {
     binds: Vec<SqlValue>,
 }
 
-/// Split an `in`/`not in` value: arrays pass through; a comma-separated string becomes a list
-/// (Frappe's db_query does this for string filter values).
+/// Split an `in`/`not in` value into a list. Arrays pass through; a string is parsed as a
+/// JSON-encoded list FIRST (so '["a","b,c"]' keeps its embedded commas — B-FIL-3), falling back
+/// to a comma-split (Frappe's db_query behavior for a plain "a,b" string).
 fn in_values(val: &Value) -> Vec<Value> {
     match val {
         Value::Array(a) => a.clone(),
-        Value::String(s) => s.split(',').map(|p| Value::from(p.trim().to_string())).collect(),
+        Value::String(s) => match serde_json::from_str::<Value>(s) {
+            Ok(Value::Array(a)) => a,
+            _ => s.split(',').map(|p| Value::from(p.trim().to_string())).collect(),
+        },
         other => vec![other.clone()],
     }
 }
@@ -169,7 +173,8 @@ fn op_clause(meta: &Meta, acl: &ReadAcl, field: &str, op: &str, val: &Value) -> 
             format!("{col} NOT LIKE ?")
         }
         "in" => {
-            let arr = in_values(val);
+            // Strip None elements (B-FIL-2): `IN` of nothing matches nothing.
+            let arr: Vec<Value> = in_values(val).into_iter().filter(|v| !v.is_null()).collect();
             if arr.is_empty() {
                 return Ok(Clause { sql: "0".into(), binds });
             }
@@ -180,7 +185,8 @@ fn op_clause(meta: &Meta, acl: &ReadAcl, field: &str, op: &str, val: &Value) -> 
             format!("{col} IN ({qs})")
         }
         "not in" => {
-            let arr = in_values(val);
+            // Strip None elements (B-FIL-2): `NOT IN` of nothing matches all rows.
+            let arr: Vec<Value> = in_values(val).into_iter().filter(|v| !v.is_null()).collect();
             if arr.is_empty() {
                 return Ok(Clause { sql: "1".into(), binds });
             }
@@ -212,15 +218,48 @@ fn op_clause(meta: &Meta, acl: &ReadAcl, field: &str, op: &str, val: &Value) -> 
     Ok(Clause { sql, binds })
 }
 
+/// AND-combine a set of clauses into one parenthesized clause (used to fold a dict filter element
+/// into a single condition). Returns None for an empty input.
+fn combine_and(clauses: Vec<Clause>) -> Option<Clause> {
+    if clauses.is_empty() {
+        return None;
+    }
+    if clauses.len() == 1 {
+        return clauses.into_iter().next();
+    }
+    let mut binds = Vec::new();
+    let sql = clauses
+        .into_iter()
+        .map(|c| {
+            binds.extend(c.binds);
+            c.sql
+        })
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    Some(Clause { sql: format!("({sql})"), binds })
+}
+
 /// Turn a Frappe filters value into clauses. Supports:
 ///   [["field","op","value"], ...]  and  [["DocType","field","op","value"], ...]
 ///   {"field": value}  and  {"field": ["op", value]}
+///   and dict elements inside the array (or_filters=[{...}, {...}]).
 fn parse_filters(meta: &Meta, acl: &ReadAcl, filters: &Value) -> Result<Vec<Clause>, OrmError> {
     let mut clauses = Vec::new();
     match filters {
         Value::Null => {}
         Value::Array(arr) => {
             for cond in arr {
+                // A dict element inside the array (B-FIL-1) — e.g. or_filters=[{...},{...}] or a
+                // dict-in-list filters entry. Expand it to its own conditions, AND-combined into a
+                // single clause so the surrounding AND/OR join keeps Frappe semantics:
+                // or_filters=[{a:1,b:2},{c:3}] -> (a=1 AND b=2) OR (c=3).
+                if cond.is_object() {
+                    let inner = parse_filters(meta, acl, cond)?;
+                    if let Some(combined) = combine_and(inner) {
+                        clauses.push(combined);
+                    }
+                    continue;
+                }
                 let c = cond
                     .as_array()
                     .ok_or_else(|| OrmError::Validation("each filter must be a list".into()))?;
