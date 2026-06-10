@@ -724,6 +724,16 @@ pub fn route_method(
         "frappe.desk.doctype.number_card.number_card.get_percentage_difference" => message(Value::Null),
         "frappe.desk.doctype.dashboard_chart.dashboard_chart.get"
         | "frappe.desk.doctype.dashboard_chart.dashboard_chart.get_data" => message(json!({ "labels": [], "datasets": [] })),
+        // A Custom chart's source is a Python+JS module ferro can't run. The widget's get_config
+        // call is NOT silent, so a 404 here pops a "method not implemented" dialog on every
+        // workspace carrying a custom chart. Return a config that registers the source against the
+        // standard (empty) chart getter, so the widget renders "No Data" instead of erroring.
+        "frappe.desk.doctype.dashboard_chart_source.dashboard_chart_source.get_config" => {
+            let src = args.get("name").cloned().unwrap_or_default().replace('\'', "");
+            message(json!(format!(
+                "frappe.provide('frappe.dashboards.chart_sources'); frappe.dashboards.chart_sources['{src}'] = {{ method: 'frappe.desk.doctype.dashboard_chart.dashboard_chart.get' }};"
+            )))
+        }
 
         // ---- workspace (desktop) page content ----
         "frappe.desk.desktop.get_desktop_page" => method_get_desktop_page(con, metas, user, &args),
