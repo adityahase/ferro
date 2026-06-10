@@ -40,6 +40,64 @@ def resolve_db(args):
     raise SystemExit("need --db, --site, or FERRO_SITE_DB")
 
 
+# JSON-meta columns the frontend JSON.parses; a non-JSON value throws and blanks the view.
+_JSON_META = {"_assign", "_liked_by", "_comments", "_user_tags", "_seen"}
+NOW_DATE = "2026-06-07"
+NOW_TIME = "10:30:00"
+
+
+def _demo_value(dt, c, sqltype, fieldtype, options, i):
+    """A type-valid demo value for column `c` (Frappe `fieldtype` when known, else SQLite type)."""
+    if c == "name":
+        return f"{dt}-DEMO-{i:06d}"
+    if c in ("creation", "modified"):
+        return NOW
+    if c in ("owner", "modified_by"):
+        return "Administrator"
+    if c in ("docstatus", "idx"):
+        return 0
+    if c in ("parent", "parentfield", "parenttype"):
+        return None
+    if c in _JSON_META:
+        return None  # leave NULL: frontend treats absent as empty, parses present as JSON
+    ft = fieldtype or ""
+    if ft in ("Datetime",):
+        return NOW
+    if ft in ("Date",):
+        return NOW_DATE
+    if ft in ("Time",):
+        return NOW_TIME
+    if ft in ("Check",):
+        return i % 2
+    if ft in ("Int", "Long Int"):
+        return i % 97
+    if ft in ("Float", "Currency", "Percent"):
+        return round((i % 1000) * 1.5, 2)
+    if ft in ("Duration",):
+        return (i % 12) * 3600
+    if ft in ("JSON", "Code") and (c.endswith("_json") or ft == "JSON"):
+        return "{}"
+    if ft in ("Select",):
+        # first non-empty option, else NULL (an arbitrary string isn't a valid Select)
+        if options:
+            for opt in str(options).split("\n"):
+                if opt.strip():
+                    return opt.strip()
+        return None
+    if ft in ("Link", "Dynamic Link", "Table", "Table MultiSelect"):
+        return None  # a fabricated link target won't resolve; NULL renders cleanly
+    if ft in ("Attach", "Attach Image", "Image", "Color", "Signature", "Password"):
+        return None
+    # fall back to the SQLite storage type for std/unmapped columns
+    if "INT" in sqltype:
+        return i % 97
+    if "REAL" in sqltype or sqltype in ("FLOAT", "DOUBLE"):
+        return round((i % 1000) * 1.5, 2)
+    if ft in ("Data", "Small Text", "Text", "Long Text", "Text Editor", "HTML Editor", "", None):
+        return STR
+    return STR
+
+
 def main():
     ap = argparse.ArgumentParser(description="Populate ferro read-path doctypes with demo rows.")
     ap.add_argument("rows", nargs="?", type=int, default=3000, help="rows per doctype (default 3000)")
@@ -73,28 +131,27 @@ def main():
             continue
         cols = [(r[1], (r[2] or "").upper()) for r in info]  # (name, type)
         colnames = [c for c, _ in cols]
+        # Frappe fieldtype per column (from tabDocField) so demo values are *type-valid*: the SPA
+        # frontends parse/format these (dayjs on Datetime, JSON.parse on _assign/_liked_by, number
+        # formatters on Float/Currency). Stuffing the placeholder string into a Datetime or JSON
+        # column threw in the browser and blanked the whole list/form view.
+        ftype = {}
+        fopts = {}
+        try:
+            for fn, ft, op in con.execute(
+                'SELECT fieldname, fieldtype, options FROM "tabDocField" WHERE parent=?', (dt,)
+            ):
+                ftype[fn] = ft
+                fopts[fn] = op
+        except sqlite3.OperationalError:
+            pass
         placeholders = ", ".join("?" for _ in colnames)
         sql = f'INSERT OR IGNORE INTO {q(table)} ({", ".join(q(c) for c in colnames)}) VALUES ({placeholders})'
         rows = []
         for i in range(have, have + need):
             vals = []
             for c, t in cols:
-                if c == "name":
-                    vals.append(f"{dt}-DEMO-{i:06d}")
-                elif c in ("creation", "modified"):
-                    vals.append(NOW)
-                elif c in ("owner", "modified_by"):
-                    vals.append("Administrator")
-                elif c in ("docstatus", "idx"):
-                    vals.append(0)
-                elif c in ("parent", "parentfield", "parenttype"):
-                    vals.append(None)
-                elif "INT" in t:
-                    vals.append(i % 97)
-                elif "REAL" in t or t in ("FLOAT", "DOUBLE"):
-                    vals.append(round((i % 1000) * 1.5, 2))
-                else:  # TEXT/VARCHAR/etc.
-                    vals.append(STR)
+                vals.append(_demo_value(dt, c, t, ftype.get(c), fopts.get(c), i))
             rows.append(vals)
         con.executemany(sql, rows)
         total += need
