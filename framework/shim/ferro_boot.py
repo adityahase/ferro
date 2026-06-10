@@ -233,6 +233,24 @@ def load(apps=None, mode="all", catch_all=True, verbose=False):
                 evs = _ast_scan_events(py)
                 if evs:
                     _AST_EVENTS[doctype] = evs
+    # Resolve override_doctype_class hooks into the controller registry so get_controller() returns
+    # the override (e.g. CRM maps Contact -> crm.overrides.contact.CustomContact, which adds the
+    # default_list_data() that crm.api.doc.get_data calls — without this it falls back to the base
+    # Document and 500s on Contact list views). Overrides win over the auto-registered base class.
+    if mode == "all":
+        for doctype, dotted in list(_OVERRIDE_CLASS.items()):
+            try:
+                modname, _, clsname = dotted.rpartition(".")
+                module = importlib.import_module(modname)
+                cls = getattr(module, clsname, None)
+                if cls is not None:
+                    frappe._register_controller(doctype, cls)
+                    n_ctrl += 1
+            except Exception as e:
+                n_err += 1
+                if verbose:
+                    sys.stderr.write(f"[override-import-error] {dotted}: {e}\n")
+
     # Map of whitelisted methods across the loaded apps, built once on worker start so ferro can
     # auto-route any /api/method/<app>.* call it doesn't serve natively into Python (see call_method).
     _WHITELISTED.clear()
@@ -412,7 +430,12 @@ def call_method(method, args_json, user):
     except (TypeError, ValueError):
         kwargs = {}
 
-    result = fn(**kwargs)
+    try:
+        result = fn(**kwargs)
+    except Exception:
+        if os.environ.get("FERRO_TRACE"):
+            traceback.print_exc()
+        raise
     return json.dumps({"message": result}, default=str)
 
 

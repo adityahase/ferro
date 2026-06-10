@@ -42,6 +42,18 @@ class Meta:
     def get(self, key, default=None):
         return getattr(self, key, default)
 
+    def as_dict(self, no_nulls=False, *a, **k):
+        # Return COPIES of the field dicts: callers (e.g. crm.api.doc.get_filterable_fields) mutate
+        # the returned fields in place, which would otherwise corrupt the shared meta cache.
+        return {
+            "name": self.name,
+            "issingle": self.issingle,
+            "istable": self.istable,
+            "is_virtual": self.is_virtual,
+            "autoname": self.autoname,
+            "fields": [dict(f) for f in self._fields],
+        }
+
     def get_field(self, fieldname):
         return self._by_name.get(fieldname)
 
