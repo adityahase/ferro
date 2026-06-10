@@ -211,6 +211,19 @@ impl Desk {
                     u.insert("name".into(), json!(user));
                 }
             }
+            // The Desk router builds its slug->doctype route map from `boot.user.can_read`
+            // (router.setup()). The frozen snapshot only lists frappe's own doctypes, so installed
+            // apps' doctypes (Item, Customer, …) have no route — navigating to /app/item falls back
+            // to getpage() and the list view never renders. Repopulate can_read/can_write/can_create
+            // from THIS site's doctypes + the user's actual permission.
+            let (can_read, can_write, can_create) = compute_user_doctype_perms(con, user);
+            if let Some(Value::Object(u)) = o.get_mut("user") {
+                u.insert("can_read".into(), json!(can_read));
+                u.insert("can_write".into(), json!(can_write));
+                u.insert("can_create".into(), json!(can_create));
+                // can_search drives the global search scope; mirror can_read.
+                u.insert("can_search".into(), json!(can_read));
+            }
             o.insert("read_only".into(), json!(0));
         }
         boot
@@ -591,6 +604,14 @@ pub fn route_method(
             message(json!("[]"))
         }
         "frappe.core.doctype.background_task.background_task.get_recent_tasks" => message(json!([])),
+        // Fire-and-forget Desk telemetry / logging methods with no UI-rendered return. Answer them
+        // with a no-op success so routine navigation never pops a "Not found" dialog (the signup
+        // control plane no-ops the same set; owning them natively makes pure-Rust ferro correct too).
+        "frappe.desk.doctype.route_history.route_history.deferred_insert"
+        | "frappe.core.doctype.access_log.access_log.make_access_log"
+        | "frappe.desk.doctype.notification_log.notification_log.mark_all_as_read"
+        | "frappe.desk.doctype.notification_settings.notification_settings.set_seen"
+        | "frappe.client.is_document_amended" => message(Value::Null),
         // Onboarding widget (frappe-ui SPAs + Desk poll this; CRM hits it dozens of times per page).
         // Faithful: parse the user's stored onboarding_status, else {} — never 404.
         "frappe.onboarding.get_onboarding_status" => {
@@ -805,6 +826,48 @@ fn strip_nulls(v: Value) -> Value {
 /// True iff `user` has read permission on `doctype`. Gates Desk-UI methods (workspace/desktop/page/
 /// number-card) that Frappe restricts to logged-in Desk users — so Guest gets empty navigation,
 /// not a leak of every workspace's layout or a row-count oracle. Administrator is always allowed.
+/// The doctypes the user may read / write / create on this site, for `boot.user.can_*`. The Desk
+/// router needs `can_read` to map a URL slug (`/app/item`) to its doctype list view; without the
+/// installed apps' doctypes here, their list views don't render. Administrator gets every
+/// non-child doctype (they bypass permission); other users are filtered by their roles' DocPerm
+/// grants (standard + custom). Permission on the actual data is still enforced server-side, so an
+/// over-broad route only ever yields an empty/denied list, never a leak.
+fn compute_user_doctype_perms(con: &Connection, user: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    // All routable (non-child) doctypes.
+    let all: Vec<String> = con
+        .prepare("SELECT name FROM \"tabDocType\" WHERE COALESCE(istable,0)=0 ORDER BY name")
+        .and_then(|mut s| {
+            s.query_map([], |r| r.get::<_, String>(0))
+                .map(|rows| rows.filter_map(|x| x.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    if user == "Administrator" {
+        return (all.clone(), all.clone(), all);
+    }
+
+    // Non-admin: a doctype is granted if any of the user's roles has a permlevel-0 DocPerm with the
+    // permission bit set (standard tabDocPerm + tabCustom DocPerm). Build the role set first.
+    let roles = auth::user_roles(con, user);
+    if roles.is_empty() {
+        return (Vec::new(), Vec::new(), Vec::new());
+    }
+    let in_list = roles.iter().map(|r| format!("'{}'", r.replace('\'', "''"))).collect::<Vec<_>>().join(",");
+    let granted = |perm: &str| -> Vec<String> {
+        let sql = format!(
+            "SELECT DISTINCT parent FROM \"tabDocPerm\" WHERE COALESCE(permlevel,0)=0 AND COALESCE(\"{perm}\",0)=1 AND role IN ({in_list}) \
+             UNION SELECT DISTINCT parent FROM \"tabCustom DocPerm\" WHERE COALESCE(permlevel,0)=0 AND COALESCE(\"{perm}\",0)=1 AND role IN ({in_list})"
+        );
+        con.prepare(&sql)
+            .and_then(|mut s| {
+                s.query_map([], |r| r.get::<_, String>(0))
+                    .map(|rows| rows.filter_map(|x| x.ok()).collect::<Vec<String>>())
+            })
+            .unwrap_or_default()
+    };
+    (granted("read"), granted("write"), granted("create"))
+}
+
 fn desk_can_read(con: &Connection, metas: &MetaCache, user: &str, doctype: &str) -> bool {
     match metas.get(con, doctype) {
         Ok(m) => auth::permission(con, &m, user, "read").allowed,

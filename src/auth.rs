@@ -165,7 +165,7 @@ fn custom_docperm_excluded(name: &str) -> bool {
 /// a normal user gets their `Has Role` rows (minus the AUTOMATIC_ROLES) plus the implicit
 /// `["All","Guest"]`, plus `["Desk User"]` iff `User.user_type == "System User"`.
 /// (Administrator is special-cased by the callers and never reaches here.)
-fn user_roles(con: &Connection, user: &str) -> Vec<String> {
+pub fn user_roles(con: &Connection, user: &str) -> Vec<String> {
     // Guest never gets the "All" role (Frappe: get_roles("Guest") == ["Guest"]).
     if user == "Guest" {
         return vec!["Guest".to_string()];
