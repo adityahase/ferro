@@ -405,6 +405,32 @@ def import_dashboards(forge, host, apps):
     rc, _out = sh(cmd, timeout=120)
     return rc == 0
 
+def mark_setup_complete(forge, host):
+    """Mark the tenant setup-complete in its DB so the Desk boots straight to the workspace. The
+    signup flow pre-configures every tenant (apps + demo data); the interactive setup wizard is only
+    for genuinely un-set-up sites, and the runtime now honours the real flag. Idempotent."""
+    db = site_db_path(forge, host)
+    if not db:
+        return False
+    try:
+        import sqlite3
+        con = sqlite3.connect(db)
+        if con.execute("UPDATE tabSingles SET value='1' WHERE doctype='System Settings' AND field='setup_complete'").rowcount == 0:
+            con.execute("INSERT INTO tabSingles (doctype, field, value) VALUES ('System Settings','setup_complete','1')")
+        if con.execute("UPDATE tabDefaultValue SET defvalue='1' WHERE defkey='setup_complete'").rowcount == 0:
+            con.execute("INSERT INTO tabDefaultValue (name, parent, parenttype, parentfield, defkey, defvalue) "
+                        "VALUES ('setup_complete','__default','__default','system_defaults','setup_complete','1')")
+        try:
+            con.execute('UPDATE "tabInstalled Application" SET is_setup_complete=1')
+        except sqlite3.Error:
+            pass
+        con.commit()
+        con.close()
+        return True
+    except sqlite3.Error:
+        return False
+
+
 def set_site_config(forge, host, **keys):
     """Merge keys into the tenant's site_config.json (best-effort)."""
     cfgp = os.path.join(forge, "sites", host, "site_config.json")
@@ -540,6 +566,13 @@ def provision(sub, apps):
                     _ok(s, "company + defaults created" if rc == 0 else "setup partial")
                 else:
                     _ok(s, "skipped (no python runtime)")
+
+            # Every signup tenant is pre-configured and lands the user straight in the app, so mark
+            # setup complete (the runtime honours the real flag now; the wizard is only for fresh,
+            # manually-created sites). Covers frappe-only/SPA tenants the setup-wizard step skips.
+            s = _step(job, "finalize", "finalizing setup")
+            mark_setup_complete(forge, host)
+            _ok(s, "ready to use")
 
             s = _step(job, "data", "adding demo rows")
             ferro(["populate", "--site", host, "--rows", str(POPULATE_ROWS)],

@@ -175,6 +175,31 @@ impl Desk {
         }
     }
 
+    /// The forge `apps/` dir, when known — used by `getpage` to read a desk Page's `.js`/`.css`.
+    pub fn apps_dir(&self) -> Option<&Path> {
+        self.apps_dir.as_deref()
+    }
+
+    /// The `setup_wizard_requires` boot list: each installed app's setup-wizard JS asset that is
+    /// actually present in the served asset tree. The wizard page `frappe.require()`s these before
+    /// building slides; each script registers its slides via `frappe.setup.on("before_load", ...)`
+    /// (ERPNext's `assets/erpnext/js/setup_wizard.js` adds the "organization"/company slide). We only
+    /// advertise a path that exists — a 404 here would hang `frappe.require` and the wizard wouldn't
+    /// render at all. frappe itself ships no separate require (its core slides are in the desk bundle).
+    fn setup_wizard_requires(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for app in &self.installed_apps {
+            if app == "frappe" {
+                continue;
+            }
+            let rel = format!("{}/js/setup_wizard.js", app);
+            if self.assets_dir.join(&rel).is_file() {
+                out.push(format!("/assets/{}", rel));
+            }
+        }
+        out
+    }
+
     /// Build the bootinfo for `user`: clone the baseline and patch the live/dynamic bits.
     fn build_boot(&self, con: &Connection, user: &str) -> Value {
         let mut boot = self.boot_template.clone();
@@ -184,20 +209,38 @@ impl Desk {
             // snapshot must be replaced with this tenant's actually-installed apps + workspaces —
             // otherwise installed apps (ERPNext, HRMS, …) never appear in Desk.
             self.inject_desktop_data(con, o);
-            // Make sure the SPA does not drop into the setup wizard.
+            // Reflect the site's REAL setup state. Frappe routes to the Desk when setup is complete
+            // and to the setup wizard otherwise; the gate is `boot.setup_complete` (mirrored into the
+            // `setup_complete` sys-default). ferro used to force "complete" to always skip the wizard,
+            // which meant a genuinely un-set-up site could never reach the wizard. Read the real flag
+            // instead: a provisioned site (the `setup-wizard` subcommand persists the flag) goes
+            // straight to Desk, a fresh site shows the wizard — matching stock Frappe.
+            let complete = db_setup_complete(con);
+            // Emit BOOLEANS, exactly like Frappe (`bootinfo.setup_complete = is_setup_complete()`,
+            // boot.py:51 / sessions.py:173). desk.js does `frappe.boot.setup_complete =
+            // frappe.boot.sysdefaults["setup_complete"]`, and the JS string "0" is *truthy* — a
+            // string here would make an un-set-up site look complete and skip the wizard.
             if let Some(Value::Object(sd)) = o.get_mut("sysdefaults") {
-                sd.insert("setup_complete".into(), json!("1"));
+                sd.insert("setup_complete".into(), json!(complete));
             }
-            o.insert("setup_complete".into(), json!(1));
+            o.insert("setup_complete".into(), json!(complete));
             o.insert("server_date".into(), json!(util::now_date()));
             o.insert("time_zone".into(), o.get("time_zone").cloned().unwrap_or(json!("UTC")));
-            // A `home_page` of "setup-wizard" makes the initial route bounce to the (now complete)
-            // setup wizard page, which redirects back -> infinite reload. Point it at the
-            // "Workspaces" standard page: pageview.show("") loads it, and its show() then redirects
-            // the empty route to the default workspace (and client-side "home" navigation works too).
-            let cur = o.get("home_page").and_then(|h| h.as_str()).unwrap_or("");
-            if cur.is_empty() || cur == "setup-wizard" {
-                o.insert("home_page".into(), json!("Workspaces"));
+            if complete {
+                // A `home_page` of "setup-wizard" on a complete site bounces to the (now hidden)
+                // wizard, which redirects back -> reload loop. Point it at the "Workspaces" standard
+                // page: pageview.show("") loads it and its show() redirects empty -> default workspace.
+                let cur = o.get("home_page").and_then(|h| h.as_str()).unwrap_or("");
+                if cur.is_empty() || cur == "setup-wizard" {
+                    o.insert("home_page".into(), json!("Workspaces"));
+                }
+                o.insert("setup_wizard_requires".into(), json!([]));
+            } else {
+                // Incomplete: land on the wizard and advertise the per-app wizard scripts that are
+                // actually present in the asset tree (each registers its slides via frappe.setup.on).
+                o.insert("home_page".into(), json!("setup-wizard"));
+                o.insert("setup_wizard_requires".into(), json!(self.setup_wizard_requires()));
+                o.insert("setup_wizard_completed_apps".into(), json!([]));
             }
             if let Some(Value::Object(ad)) = o.get_mut("apps_data") {
                 let dp = ad.get("default_path").and_then(|d| d.as_str()).unwrap_or("");
@@ -589,6 +632,7 @@ pub fn route_method(
     body: &str,
     content_type: Option<&str>,
     http_method: &str,
+    apps_dir: Option<&Path>,
 ) -> Option<(u16, Value)> {
     let args = collect_args(params, body, content_type);
 
@@ -641,6 +685,17 @@ pub fn route_method(
         "frappe.realtime.get_user_info" => message(json!({})),
         "frappe.core.doctype.user.user.get_all_roles" => message(get_all_roles(con)),
         "frappe.core.doctype.user.user.get_timezones" => message(json!({"timezones": TIMEZONES})),
+        // ---- setup wizard (shown on a setup-incomplete site) ----
+        "frappe.desk.page.setup_wizard.setup_wizard.load_languages" => method_load_languages(con),
+        "frappe.desk.page.setup_wizard.setup_wizard.load_user_details" => method_load_user_details(con, user),
+        // load_messages switches language; we don't re-translate server-side, just echo the code.
+        "frappe.desk.page.setup_wizard.setup_wizard.load_messages" => {
+            message(json!(args.get("language").cloned().unwrap_or_else(|| "en".into())))
+        }
+        "frappe.geo.country_info.get_country_timezone_info" => method_country_timezone_info(),
+        "frappe.geo.country_info.get_country_info" | "frappe.geo.country_info.get_all" => {
+            message(country_info())
+        }
         "frappe.desk.search.search_link" | "frappe.desk.search.search_widget" => {
             method_search_link(con, metas, user, &args)
         }
@@ -673,7 +728,7 @@ pub fn route_method(
         // ---- workspace (desktop) page content ----
         "frappe.desk.desktop.get_desktop_page" => method_get_desktop_page(con, metas, user, &args),
         "frappe.desk.desktop.get_workspace_sidebar_items" => method_workspace_sidebar(con, metas, user),
-        "frappe.desk.desk_page.getpage" => method_getpage(con, metas, user, &args),
+        "frappe.desk.desk_page.getpage" => method_getpage(con, metas, user, &args, apps_dir),
 
         // ---- form view ----
         "frappe.desk.form.load.getdoctype" => method_getdoctype(con, metas, &args),
@@ -907,6 +962,28 @@ fn read_perm(
         None
     };
     Ok((acl, owner_scope))
+}
+
+/// The site's real setup-complete flag — gates Desk vs. setup wizard. Mirrors
+/// `frappe.is_setup_complete()`: read System Settings.setup_complete (stored in tabSingles),
+/// falling back to the `setup_complete` sys-default. Absent / "0" / false => not complete.
+fn db_setup_complete(con: &Connection) -> bool {
+    let truthy = |s: &str| s == "1" || s.eq_ignore_ascii_case("true");
+    if let Ok(Some(v)) = con.query_row(
+        "SELECT value FROM \"tabSingles\" WHERE doctype='System Settings' AND field='setup_complete'",
+        [],
+        |r| r.get::<_, Option<String>>(0),
+    ) {
+        return truthy(&v);
+    }
+    if let Ok(Some(v)) = con.query_row(
+        "SELECT defvalue FROM tabDefaultValue WHERE defkey='setup_complete' LIMIT 1",
+        [],
+        |r| r.get::<_, Option<String>>(0),
+    ) {
+        return truthy(&v);
+    }
+    false
 }
 
 /// Frappe's reserved meta columns whose values the Desk frontend `JSON.parse`s
@@ -1156,6 +1233,68 @@ fn method_number_card_result(con: &Connection, metas: &MetaCache, user: &str, ar
         Ok(v) => message(json!(v)),
         Err(_) => message(json!(0)),
     }
+}
+
+/// `frappe.desk.page.setup_wizard.setup_wizard.load_languages` — the language picker on the
+/// wizard's first slide. Shape: {default_language, languages:[{value,label,description}],
+/// codes_to_names:{code:name}}.
+fn method_load_languages(con: &Connection) -> (u16, Value) {
+    let mut languages: Vec<Value> = Vec::new();
+    let mut codes_to_names = Map::new();
+    if let Ok(mut stmt) = con.prepare(
+        "SELECT language_code, language_name FROM \"tabLanguage\" WHERE COALESCE(enabled,0)=1 ORDER BY language_code",
+    ) {
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
+        });
+        if let Ok(rows) = rows {
+            for row in rows.flatten() {
+                let (code, name) = (row.0.unwrap_or_default(), row.1.unwrap_or_default());
+                if code.is_empty() {
+                    continue;
+                }
+                let label = if name.is_empty() { code.clone() } else { name.clone() };
+                languages.push(json!({"value": label, "label": label, "description": code}));
+                codes_to_names.insert(code, json!(label));
+            }
+        }
+    }
+    message(json!({
+        "default_language": "English",
+        "languages": languages,
+        "codes_to_names": codes_to_names,
+    }))
+}
+
+/// `frappe.desk.page.setup_wizard.setup_wizard.load_user_details` — prefill the wizard's user slide
+/// from the current desk user (Frappe reads a signup cache; we read the actual user row).
+fn method_load_user_details(con: &Connection, user: &str) -> (u16, Value) {
+    let row: Option<(Option<String>, Option<String>)> = con
+        .query_row(
+            "SELECT full_name, email FROM \"tabUser\" WHERE name = ?1",
+            rusqlite::params![user],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+    let (full_name, email) = row.unwrap_or((None, None));
+    message(json!({
+        "full_name": full_name,
+        "email": email.or_else(|| if user.contains('@') { Some(user.to_string()) } else { None }),
+    }))
+}
+
+/// The vendored Frappe `country_info.json` (country -> {code, currency, timezones, date_format, …}),
+/// parsed on demand. Backs the wizard's country/currency/timezone autofill.
+fn country_info() -> Value {
+    serde_json::from_str(include_str!("country_info.json")).unwrap_or_else(|_| json!({}))
+}
+
+/// `frappe.geo.country_info.get_country_timezone_info` — {country_info, all_timezones}.
+fn method_country_timezone_info() -> (u16, Value) {
+    message(json!({
+        "country_info": country_info(),
+        "all_timezones": TIMEZONES,
+    }))
 }
 
 /// `frappe.desk.form.load.getdoctype` — the doctype meta the form renderer needs.
@@ -1646,16 +1785,87 @@ fn method_workspace_sidebar(con: &Connection, metas: &MetaCache, user: &str) -> 
 }
 
 /// `frappe.desk.desk_page.getpage` — a single workspace page document.
-fn method_getpage(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
-    // Desk-UI gate: a workspace page is Desk-user content.
+fn method_getpage(
+    con: &Connection,
+    metas: &MetaCache,
+    user: &str,
+    args: &HashMap<String, String>,
+    apps_dir: Option<&Path>,
+) -> (u16, Value) {
+    let name = args.get("name").cloned().unwrap_or_default();
+    // A desk **Page** (tabPage) — e.g. `setup-wizard`, `background_jobs`. The client evals the page's
+    // `.script` (its `frappe.pages[...].on_page_load`), so we load it from the app source, mirroring
+    // Frappe's Page.load_assets. Without this the route resolves to a blank page (e.g. the wizard).
+    if user != "Guest" {
+        if let Ok(Some(mut page)) = row_as_object(con, "tabPage", "name", &name) {
+            if let Value::Object(ref mut o) = page {
+                let module = o.get("module").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if let Some((script, style)) = load_page_assets(con, apps_dir, &name, &module) {
+                    o.insert("script".into(), json!(script));
+                    o.insert("__script__".into(), json!(script));
+                    if let Some(s) = style {
+                        o.insert("style".into(), json!(s));
+                    }
+                }
+                o.insert("doctype".into(), json!("Page"));
+            }
+            return message(page);
+        }
+    }
+    // Fallback: a workspace page (legacy callers), gated on Workspace read.
     if !desk_can_read(con, metas, user, "Workspace") {
         return message(json!({}));
     }
-    let name = args.get("name").cloned().unwrap_or_default();
     match row_as_object(con, "tabWorkspace", "name", &name) {
         Ok(Some(doc)) => message(doc),
         _ => message(json!({})),
     }
+}
+
+/// The app a module belongs to (tabModule Def.app_name), e.g. "Desk" -> "frappe".
+fn module_app(con: &Connection, module: &str) -> Option<String> {
+    con.query_row(
+        "SELECT app_name FROM \"tabModule Def\" WHERE name = ?1",
+        rusqlite::params![module],
+        |r| r.get::<_, Option<String>>(0),
+    )
+    .ok()
+    .flatten()
+    .filter(|s| !s.is_empty())
+}
+
+/// Read a desk Page's `.js` (and optional `.css`) from the app source, mirroring Frappe's
+/// `Page.load_assets`: `<app>/<scrub(module)>/page/<scrub(name)>/<scrub(name)>.{js,css}`. The forge
+/// `apps/<app>` symlink may point at the repo root (package nested one level) or the package itself,
+/// so we try both roots. Returns (script, style) or None if the source isn't available.
+fn load_page_assets(
+    con: &Connection,
+    apps_dir: Option<&Path>,
+    name: &str,
+    module: &str,
+) -> Option<(String, Option<String>)> {
+    let apps = apps_dir?;
+    let app = module_app(con, module).unwrap_or_else(|| scrub(module));
+    let mod_folder = scrub(module);
+    let page_folder = scrub(name);
+    let tail = |root: PathBuf| {
+        root.join(&mod_folder)
+            .join("page")
+            .join(&page_folder)
+            .join(format!("{page_folder}.js"))
+    };
+    // candidate package roots: <apps>/<app>/<app> (repo-root symlink) and <apps>/<app> (package symlink)
+    let candidates = [apps.join(&app).join(&app), apps.join(&app)];
+    for root in candidates {
+        let js_path = tail(root.clone());
+        if let Ok(src) = std::fs::read_to_string(&js_path) {
+            let script = format!("{src}\n\n//# sourceURL={page_folder}.js");
+            let css_path = js_path.with_file_name(format!("{page_folder}.css"));
+            let style = std::fs::read_to_string(&css_path).ok();
+            return Some((script, style));
+        }
+    }
+    None
 }
 
 /// One `Workspace Sidebar Item` (serialized shape the Desk bundle renders), with the doctype-default

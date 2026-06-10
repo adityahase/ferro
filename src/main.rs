@@ -470,6 +470,46 @@ fn install_hooks_cli(args: &[String]) {
     }
 }
 
+/// Mark the site setup-complete in the DB so the Desk boot routes to the Desk (not the wizard).
+/// Sets System Settings.setup_complete (tabSingles), the `setup_complete` sys-default
+/// (tabDefaultValue), and every Installed Application's is_setup_complete — the three places
+/// `frappe.is_setup_complete()` / the boot read. Best-effort; missing tables are ignored.
+fn mark_setup_complete(con: &rusqlite::Connection) {
+    // System Settings single value
+    let updated = con
+        .execute(
+            "UPDATE \"tabSingles\" SET value='1' WHERE doctype='System Settings' AND field='setup_complete'",
+            [],
+        )
+        .unwrap_or(0);
+    if updated == 0 {
+        let _ = con.execute(
+            "INSERT INTO \"tabSingles\" (doctype, field, value) VALUES ('System Settings','setup_complete','1')",
+            [],
+        );
+    }
+    // sys_defaults mirror
+    let updated = con
+        .execute(
+            "UPDATE \"tabDefaultValue\" SET defvalue='1' WHERE defkey='setup_complete'",
+            [],
+        )
+        .unwrap_or(0);
+    if updated == 0 {
+        let _ = con.execute(
+            "INSERT INTO \"tabDefaultValue\" (name, parent, parenttype, parentfield, defkey, defvalue) \
+             VALUES ('setup_complete','__default','__default','system_defaults','setup_complete','1')",
+            [],
+        );
+    }
+    // per-app flag
+    let _ = con.execute(
+        "UPDATE \"tabInstalled Application\" SET is_setup_complete=1",
+        [],
+    );
+    let _ = con.execute_batch("COMMIT;");
+}
+
 /// `ferro setup-wizard <site-dir-or-db> [json-args]` — run ERPNext's programmatic setup_complete so
 /// a fresh site gets a Company + Chart of Accounts + defaults (the wizard's outcome). Once a Company
 /// exists ERPNext reports setup complete, so the Desk wizard correctly stays hidden. python build only.
@@ -529,6 +569,10 @@ fn setup_wizard_cli(args: &[String]) {
                 for dt in &dts {
                     let _ = schema::sync_table(&con, dt);
                 }
+                // Persist the setup-complete flag so the Desk boot (which now reads the real value)
+                // routes to the Desk, not the wizard. Frappe's gate is System Settings.setup_complete
+                // (mirrored to the `setup_complete` sys-default) + Installed Application.is_setup_complete.
+                mark_setup_complete(&con);
             }
             Err(e) => {
                 eprintln!("ferro setup-wizard: failed: {e}");
@@ -1253,8 +1297,8 @@ fn route(
                 return r;
             }
             // Desk's frappe.* whitelisted methods (list/form/boot), mapped onto ferro's ORM.
-            if app.desk.is_some() {
-                if let Some(r) = desk::route_method(con, &app.metas, &ident.user, mname, &params, body, content_type, method) {
+            if let Some(desk) = app.desk.as_deref() {
+                if let Some(r) = desk::route_method(con, &app.metas, &ident.user, mname, &params, body, content_type, method, desk.apps_dir()) {
                     return r;
                 }
             }
@@ -1819,8 +1863,8 @@ fn route_v2_method(
         return v1_to_v2(dev, status, body_v);
     }
     // Tier 2: desk's curated frappe.* whitelist (list/form/boot), mapped onto ferro's ORM.
-    if app.desk.is_some() {
-        if let Some((status, body_v)) = desk::route_method(con, &app.metas, &ident.user, mname, params, body, content_type, method) {
+    if let Some(desk) = app.desk.as_deref() {
+        if let Some((status, body_v)) = desk::route_method(con, &app.metas, &ident.user, mname, params, body, content_type, method, desk.apps_dir()) {
             return v1_to_v2(dev, status, body_v);
         }
     }
