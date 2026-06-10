@@ -1021,7 +1021,9 @@ fn route(
     let ident = match auth::resolve_user(con, auth_header, &app.default_user, app.encryption_key.as_deref()) {
         AuthOutcome::Ok(id) => id,
         AuthOutcome::Unauthorized => {
-            return err(app.dev, 401, "AuthenticationError", "Invalid authentication credentials".into())
+            // B-REST-1: a /api/v2/* request must get the v2 error envelope, not the v1 shape.
+            let mk = if segments.get(1).map(|s| s.as_str()) == Some("v2") { err_v2 } else { err };
+            return mk(app.dev, 401, "AuthenticationError", "Invalid authentication credentials".into());
         }
     };
 
@@ -1091,6 +1093,8 @@ fn route(
                 let mname = resolved.as_deref().unwrap_or(seg3);
                 route_v2_method(con, app, &ident, method, mname, &params, body, content_type)
             }
+            // B-REST-2: /api/v2/doctype/<dt>/meta and /api/v2/doctype/<dt>/count
+            Some("doctype") => route_v2_doctype(con, app, &ident, &segments, &params),
             _ => err_v2(app.dev, 404, "NotFound", format!("Unknown path /{}", segments.join("/"))),
         },
         _ => err(app.dev, 404, "NotFound", format!("Unknown path /{}", segments.join("/"))),
@@ -1231,6 +1235,57 @@ fn route_v2_document(
             }
         }
         (m, _) => err_v2(dev, 405, "MethodNotAllowed", format!("{m} not allowed here")),
+    }
+}
+
+/// `/api/v2/doctype/<doctype>/{meta,count}` (B-REST-2). `meta` returns the serialized DocType meta
+/// (Frappe gates it on the "All" role → any authenticated user, i.e. not Guest); `count` returns the
+/// row count, gated on read permission like the resource path.
+fn route_v2_doctype(
+    con: &Connection,
+    app: &App,
+    ident: &auth::Identity,
+    segments: &[String],
+    params: &HashMap<String, String>,
+) -> (u16, Value) {
+    let dev = app.dev;
+    let doctype = match segments.get(3) {
+        Some(d) if !d.is_empty() => d.clone(),
+        _ => return err_v2(dev, 404, "NotFound", "No doctype in path".into()),
+    };
+    let sub = segments.get(4).map(|s| s.as_str()).unwrap_or("");
+    let meta = match app.metas.get(con, &doctype) {
+        Ok(m) => m,
+        Err(meta::MetaError::NotFound(d)) => return err_v2(dev, 404, "DoesNotExistError", format!("DocType {d} not found")),
+        Err(meta::MetaError::Db(e)) => return map_orm_err_v2(dev, OrmError::Db(e)),
+    };
+    match sub {
+        "meta" => {
+            // frappe.only_for("All"): any authenticated user (Guest lacks the All role).
+            if ident.user == "Guest" {
+                return err_v2(dev, 403, "PermissionError", "Not permitted".into());
+            }
+            match desk::build_meta_doc(con, &doctype) {
+                Ok(m) => (200, json!({ "data": m })),
+                Err(e) => map_orm_err_v2(dev, e),
+            }
+        }
+        "count" => {
+            let perm = auth::permission(con, &meta, &ident.user, "read");
+            if !perm.allowed {
+                return err_v2(dev, 403, "PermissionError", format!("No 'read' permission for {} on {doctype}", ident.user));
+            }
+            let filters = params
+                .get("filters")
+                .and_then(|f| serde_json::from_str::<Value>(f).ok())
+                .unwrap_or(Value::Null);
+            let owner_scope = if perm.only_if_owner { Some(ident.user.as_str()) } else { None };
+            match orm::count(con, &meta, &filters, owner_scope) {
+                Ok(n) => (200, json!({ "data": n })),
+                Err(e) => map_orm_err_v2(dev, e),
+            }
+        }
+        _ => err_v2(dev, 404, "NotFound", format!("Unknown doctype sub-path '{sub}'")),
     }
 }
 

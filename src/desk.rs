@@ -602,6 +602,8 @@ pub fn route_method(
             "open_count_doctype": {}, "open_count_other": {}, "targets": {},
             "new_messages": [], "notification_count": {}, "notification_percent": {}
         })),
+        // server-to-server presence stub (frappe-ui realtime calls this on connect).
+        "frappe.realtime.get_user_info" => message(json!({})),
         "frappe.core.doctype.user.user.get_all_roles" => message(get_all_roles(con)),
         "frappe.core.doctype.user.user.get_timezones" => message(json!({"timezones": TIMEZONES})),
         "frappe.client.get_count" | "frappe.desk.reportview.get_count" => {
@@ -1342,7 +1344,7 @@ fn child_rows_query(con: &Connection, sql: &str) -> Result<Value, OrmError> {
 }
 
 /// Assemble the full DocType meta doc (tabDocType row + its fields + permissions) the form needs.
-fn build_meta_doc(con: &Connection, doctype: &str) -> Result<Value, OrmError> {
+pub fn build_meta_doc(con: &Connection, doctype: &str) -> Result<Value, OrmError> {
     let dt = row_as_object(con, "tabDocType", "name", doctype)?
         .ok_or_else(|| OrmError::NotFound(format!("DocType {doctype} not found")))?;
     let mut doc = dt;
