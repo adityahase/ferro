@@ -124,6 +124,14 @@ def get_doc(*args, **kwargs):
         # single
         data = _rt.get_doc(doctype, doctype) if _rt else {}
         return _new_controller(doctype, dict(data))
+    if isinstance(name, dict):
+        # get_doc("DocType", {filters}) — resolve the filter dict to a name first (real Frappe
+        # semantics). _rt.get_doc only understands a string name; handing it the dict builds
+        # malformed SQL. Reuse the working filtered-read path to find the matching name.
+        resolved = get_value(doctype, name, "name")
+        if not resolved:
+            raise DoesNotExistError(f"{doctype} {name} not found")
+        name = resolved
     data = _rt.get_doc(doctype, name)
     return _new_controller(doctype, dict(data))
 
@@ -484,4 +492,10 @@ def __getattr__(name):
     return stub_attr(name)
 
 
-__version__ = "ferro-shim-0"
+# A real, numeric version string: app code version-gates on frappe.__version__ /
+# frappe.pulse.utils.get_frappe_version() at *import* time (e.g. crm.api.doc's
+# COUNT_NAME = ... if is_frappe_version("16", above=True)). A non-numeric stub there makes
+# int(version.split(".")[0]) raise, so the whole module fails to import and every method in it
+# becomes unroutable. CRM (>=16) and ERPNext (>=17) both target 16+, so we claim 16.
+__version__ = "16.0.0"
+VERSION = __version__
