@@ -21,9 +21,12 @@ The swap flips one reversible flag — `web_runtime: gunicorn → ferro` in `com
 
 ## Scope
 
-- **Works, pure Rust:** v1 + v2 REST, auth, permissions, naming, Desk, app SPAs (crm/helpdesk/gameplan).
-- **Needs `ferrod`** (`--features python`): controller logic — `validate`/`on_submit`, app methods.
-- **Not yet:** production one-flag swap, full User Permissions / DocShare. → [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
+- **Works, pure Rust:** v1 + v2 REST (incl. bulk / copy / expand / doctype meta+count), password login
+  & real `tabSessions`, row + field-level permissions (permlevel masking + DocShare), naming, Desk,
+  app SPAs (crm/helpdesk/gameplan).
+- **Needs `ferrod`** (`--features python`): controller logic — `validate`/`on_submit`, submit / cancel /
+  workflow, app methods.
+- **Not yet:** production one-flag swap, doc-level User Permissions. → [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
 
 ## More
 

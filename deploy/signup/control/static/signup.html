@@ -199,8 +199,9 @@
   </div>
 
   <p class="foot">
-    Ferro serves <b>Frappe Desk</b> from a Rust runtime — workspaces, lists, forms and CRUD writes are real;
-    some framework side-effects (email/PDF/realtime, custom controllers) are deferred by design.<br>
+    Ferro serves <b>Frappe Desk</b> from a Rust runtime — workspaces, lists, forms, CRUD writes,
+    row &amp; field-level permissions, sessions/login and the full v1 + v2 REST API are faithful to Frappe;
+    some framework side-effects (email/PDF/realtime, submit/cancel/workflow, custom controllers) are deferred by design.<br>
     Built on <code>ferro</code> · the apps are © Frappe Technologies, cloned from upstream. Not affiliated with Frappe.
   </p>
 </div>
@@ -309,7 +310,7 @@ function success(host){
     `<a class="btn" target="_blank" href="https://${host}${APP_ROUTES[a]}">Open ${APP_LABELS[a]} ↗</a>`).join('');
   if(spa.length){ $('#d-open').className='btn ghost'; }   // an app is the primary CTA; Desk secondary
   $('#d-curl').textContent=
-    `# Desk lives at https://${host}/app  —  it also speaks the Frappe REST API:\ncurl 'https://${host}/api/resource/DocType?limit_page_length=5'`;
+    `# Desk lives at https://${host}/app  —  it also speaks the Frappe REST API (v1 + v2):\ncurl 'https://${host}/api/resource/DocType?limit_page_length=5'`;
   $('#d-another').onclick=()=>location.reload();
 }
 init();

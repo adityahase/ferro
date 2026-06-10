@@ -1,28 +1,32 @@
 # ferro — known limitations / intentionally-deferred divergences
 
-ferro targets the Frappe **v1 REST data plane** (CRUD + token auth + doctype/row/field
-permissions) as a memory-light drop-in. The items below are confirmed differences from a full
-CPython+Frappe worker that are out of that scope or deliberately deferred. None are crashes or
-silent data corruption; each is a behavioral gap a client could observe.
+ferro targets the Frappe **v1 + v2 REST data plane** (CRUD + token/password auth + sessions +
+doctype/row/field permissions) as a memory-light drop-in. The items below are confirmed differences
+from a full CPython+Frappe worker that are out of that scope or deliberately deferred. None are
+crashes or silent data corruption; each is a behavioral gap a client could observe.
 
 ## By design (a REST runtime, not the framework)
 - **No controller business logic.** Frappe `validate`/`before_save`/`on_submit` hooks, server
   scripts, and whitelisted controller methods do not run. `POST /api/resource/<dt>/<name>`
   (run_method / submit-cancel) returns 405. Computed/fetched fields, doc-event side effects,
   and custom `get_list` query rewrites are not applied.
-- **No `/api/v2` namespace.** Only v1 (`/api/resource`, `/api/method`) is served. v2's
-  `has_next_page`, bulk ops, `/document`, `/doctype/<dt>/{meta,count}` are absent.
-- **`/api/method` is allow-listed** to `ping` + `get_logged_user` (any other dotted method → 404),
-  since arbitrary methods are Python.
+- **`/api/v2` is served** (`/document`, `/doctype/<dt>/{meta,count}`, bulk delete/update, copy,
+  `expand`, the v2 `errors[]` envelope). Still absent: `has_next_page` pagination cursors.
+- **`/api/method` serves a fixed surface** — the perm-gated `frappe.client.*` (get/get_list/
+  get_value/get_count/set_value/delete) and `frappe.desk.*` reads/saves the Desk SPA needs, plus
+  `ping`/`get_logged_user`. Arbitrary app `*.api.*` methods are Python and need the `ferrod` tier.
 
 ## Permissions (partial parity)
-- **`if_owner` is implemented; full User Permissions are not.** Per-user link-value restrictions
-  (`tabUser Permission`), `apply_user_permissions`, strict-vs-empty allowances, and DocShare
-  (`tab DocShare`) row sharing are not enforced. Effect: a restricted user may see/edit rows that
-  Frappe's User-Permission match conditions would hide (beyond the owner scope, which *is* honored).
-- **Field-level permlevel is enforced on reads, not fully on writes.** Reads mask permlevel>0
-  fields the user can't read; writes guard system fields and reject unknown/unreadable fields, but
-  do not reset a permlevel>1 field a user lacks write access to as precisely as Frappe.
+- **`if_owner` and DocShare are implemented; doc-level User Permissions are not.** Owner scoping and
+  DocShare single-doc grants (`tabDocShare` — the under-grant side) *are* enforced. Per-user
+  link-value restrictions (`tabUser Permission`), `apply_user_permissions`, and strict-vs-empty
+  allowances are not. Effect: a restricted user may see/edit rows that Frappe's User-Permission match
+  conditions would hide (beyond owner + share scope, which *are* honored). Left out by design: a
+  partial implementation risks over-restricting, which is worse than the documented over-grant.
+- **Field-level permlevel is enforced on both reads and writes.** Reads mask permlevel>0 fields the
+  user can't read; writes mask fields whose permlevel the user lacks write access to (so a forged
+  payload can't set them). The one gap vs Frappe is meta-cache invalidation: permlevel changes made
+  at runtime aren't observed until the worker restarts.
 
 ## Write semantics
 - **Child-table update is full-array replace** (delete + reinsert), so child row `name`s change.
@@ -31,14 +35,15 @@ silent data corruption; each is a behavioral gap a client could observe.
   single's stored fields.
 - **No link-integrity check on delete.** Frappe raises `LinkExistsError` when other docs reference
   the target; ferro deletes it (FK enforcement is off, matching Frappe's app-level approach — but
-  the app-level check itself is not reimplemented).
-- **No optimistic-concurrency guard** (`check_if_latest` / `modified` timestamp): concurrent
-  updates last-writer-wins instead of raising a conflict.
+  the app-level check itself is not reimplemented). Link *target* existence on insert/update *is*
+  now validated (`417` on a dangling Link / Dynamic Link).
 - **`autoincrement` uses MAX(name)+1** within the write transaction rather than a DB sequence.
 
 ## Auth
-- **Basic auth supports `api_key:api_secret` only**, not interactive username/password (Frappe
-  hashes login passwords with passlib/pbkdf2, a separate scheme from the Fernet api_secret path).
+- **Password login + sessions are implemented.** `POST /api/method/login` verifies the password
+  (passlib/pbkdf2, the same hash Frappe stores) and mints a real `tabSessions` sid cookie (validated
+  per request, expiry-checked, re-checks the user is still enabled, cleared on logout); `api_key:
+  api_secret` Basic auth also works. **Not** implemented: OAuth / social login, LDAP, and 2FA.
 
 ## Query
 - **Missing exotic operators:** `timespan`/`previous`/`next`, NestedSet `descendants of`/`ancestors

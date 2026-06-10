@@ -157,8 +157,12 @@ Tunables (env on `ferro-control.service`): `FERRO_ASSETS`, `FERRO_MAX_INSTANCES`
 
 ## Security model
 
-* Each bench is an intentionally-open **sandbox**: `ferro serve --user Administrator`, so the REST
-  API is reachable without credentials. This is by design for a demo; it is **not** multi-user.
+* Each bench is an intentionally-open **sandbox**: it pins the default request user to Administrator
+  (`ferro serve --default-user Administrator`), so the Desk and REST API are reachable without logging
+  in. The runtime itself now enforces **real Frappe auth** — password login, `tabSessions`, and row +
+  field-level permissions (permlevel masking + DocShare) — so this open posture is a deliberate,
+  explicit opt-in (after the framework-compat audit, bare `--desk` defaults to **Guest** and warns),
+  **not** a missing-auth gap. It is by design for a demo; it is **not** multi-user.
 * Tenants are isolated by process + port + their own SQLite site. The proxy only ever dials
   `127.0.0.1:<that tenant's port>`; it cannot be steered to another host.
 * `/internal/*` is loopback + `X-Forwarded-For`-gated + token-gated, so the reaper/teardown/ask
