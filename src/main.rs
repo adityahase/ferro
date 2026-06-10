@@ -433,6 +433,22 @@ fn install_hooks_cli(args: &[String]) {
                 Ok(summary) => {
                     println!("ferro install-hooks: {summary}");
                     let _ = con.execute_batch("COMMIT;"); // flush any open implicit txn
+                    // after_install creates Custom Fields, but the column DDL is ferro's job:
+                    // sync_table reads the merged standard+custom field list and ALTER TABLE ADDs
+                    // any missing column, so filters/reads on the new custom fields work.
+                    let dts: Vec<String> = con
+                        .prepare("SELECT DISTINCT dt FROM \"tabCustom Field\"")
+                        .and_then(|mut s| s.query_map([], |r| r.get::<_, String>(0)).map(|r| r.filter_map(|x| x.ok()).collect()))
+                        .unwrap_or_default();
+                    let mut synced = 0usize;
+                    for dt in &dts {
+                        if schema::sync_table(&con, dt).unwrap_or(false) {
+                            synced += 1;
+                        }
+                    }
+                    if !dts.is_empty() {
+                        eprintln!("ferro install-hooks: added custom-field columns on {synced}/{} doctypes", dts.len());
+                    }
                 }
                 Err(e) => {
                     eprintln!("ferro install-hooks: hook run failed: {e}");
