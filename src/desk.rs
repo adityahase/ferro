@@ -734,6 +734,23 @@ pub fn route_method(
                 "frappe.provide('frappe.dashboards.chart_sources'); frappe.dashboards.chart_sources['{src}'] = {{ method: 'frappe.desk.doctype.dashboard_chart.dashboard_chart.get' }};"
             )))
         }
+        // Report-type charts/views load the report's JS via get_script (NOT silent — a 404 pops a
+        // dialog on workspaces carrying a Report chart). ferro has no report engine, so return the
+        // benign empty-report script Frappe itself falls back to, and an empty run result, so the
+        // chart shows "No Data" rather than erroring.
+        "frappe.desk.query_report.get_script" => {
+            let rn = args.get("report_name").cloned().unwrap_or_default().replace('\'', "");
+            message(json!({
+                "script": format!("frappe.query_reports['{rn}']={{}}"),
+                "html_format": Value::Null,
+                "execution_time": 0,
+                "filters": [],
+                "custom_report_name": Value::Null,
+            }))
+        }
+        "frappe.desk.query_report.run" | "frappe.desk.query_report.background_enqueue_run" => {
+            message(json!({ "result": [], "columns": [], "message": Value::Null, "chart": Value::Null, "report_summary": [] }))
+        }
 
         // ---- workspace (desktop) page content ----
         "frappe.desk.desktop.get_desktop_page" => method_get_desktop_page(con, metas, user, &args),
@@ -1377,6 +1394,18 @@ fn method_getdoc(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap
     match orm::get_doc(con, &meta, &acl, &name) {
         Ok(mut doc) => {
             sanitize_meta_json(&mut doc);
+            // Number Card / Dashboard Chart dynamic filters are JS expressions the widget evals
+            // client-side (e.g. `erpnext.utils.get_fiscal_year(...)`). ferro's Desk doesn't load
+            // erpnext.bundle.js, so those helpers are undefined and the eval throws an "Invalid
+            // expression set in filter" dialog on the workspace. Blank dynamic_filters_json so the
+            // widget falls back to the static filters (the count/chart still renders).
+            if doctype == "Number Card" || doctype == "Dashboard Chart" {
+                if let Value::Object(ref mut o) = doc {
+                    if o.contains_key("dynamic_filters_json") {
+                        o.insert("dynamic_filters_json".into(), json!("[]"));
+                    }
+                }
+            }
             if let Value::Object(ref mut o) = doc {
                 o.insert("doctype".into(), json!(doctype));
             }
