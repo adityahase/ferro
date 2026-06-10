@@ -909,6 +909,25 @@ fn read_perm(
     Ok((acl, owner_scope))
 }
 
+/// Frappe's reserved meta columns whose values the Desk frontend `JSON.parse`s
+/// (`ListView.get_meta_html` parses `_assign`; the like/seen/comment widgets parse the rest). A
+/// present-but-non-JSON value here — e.g. stray import/demo data in the column — throws in the
+/// browser and silently blanks the entire list/form render. Frappe itself always stores valid JSON
+/// (or NULL) here, so we coerce any unparseable value back to NULL to match that invariant and keep
+/// the view rendering. Cheap: at most four keys, only touched when present and a non-JSON string.
+const META_JSON_FIELDS: [&str; 4] = ["_assign", "_liked_by", "_comments", "_seen"];
+
+fn sanitize_meta_json(row: &mut Value) {
+    if let Value::Object(map) = row {
+        for k in META_JSON_FIELDS {
+            let bad = matches!(map.get(k), Some(Value::String(s)) if !s.is_empty() && serde_json::from_str::<Value>(s).is_err());
+            if bad {
+                map.insert(k.to_string(), Value::Null);
+            }
+        }
+    }
+}
+
 /// `frappe.desk.reportview.get` — list view data in Frappe's compressed `{keys, values}` form.
 fn method_reportview_get(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
@@ -926,7 +945,12 @@ fn method_reportview_get(con: &Connection, metas: &MetaCache, user: &str, args: 
     let q = build_query(&meta, args);
     let keys = q.fields.clone();
     match orm::get_list(con, &meta, &acl, &q, owner_scope.as_deref()) {
-        Ok(Value::Array(rows)) => {
+        Ok(Value::Array(mut rows)) => {
+            // Coerce reserved meta JSON columns to NULL when unparseable (see META_JSON_FIELDS):
+            // a non-JSON `_assign` blanks the list view in get_meta_html.
+            for row in rows.iter_mut() {
+                sanitize_meta_json(row);
+            }
             // project each row object into a values array in `keys` order
             let values: Vec<Value> = rows
                 .iter()
@@ -961,7 +985,14 @@ fn method_get_list(con: &Connection, metas: &MetaCache, user: &str, args: &HashM
     };
     let q = build_query(&meta, args);
     match orm::get_list(con, &meta, &acl, &q, owner_scope.as_deref()) {
-        Ok(v) => message(v),
+        Ok(mut v) => {
+            if let Value::Array(ref mut rows) = v {
+                for row in rows.iter_mut() {
+                    sanitize_meta_json(row);
+                }
+            }
+            message(v)
+        }
         Err(e) => map_orm_err(e),
     }
 }
@@ -1180,6 +1211,7 @@ fn method_getdoc(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap
     }
     match orm::get_doc(con, &meta, &acl, &name) {
         Ok(mut doc) => {
+            sanitize_meta_json(&mut doc);
             if let Value::Object(ref mut o) = doc {
                 o.insert("doctype".into(), json!(doctype));
             }
@@ -1846,6 +1878,26 @@ mod desktop_data_tests {
         )
         .unwrap();
         con
+    }
+
+    #[test]
+    fn sanitize_meta_json_nulls_unparseable_reserved_cols() {
+        // A non-JSON `_assign` (stray import/demo text) must become NULL so the Desk list view's
+        // JSON.parse doesn't throw and blank the whole view; valid JSON and NULL are preserved.
+        let mut row = json!({
+            "name": "C-1",
+            "_assign": "Representative demo value for list-view payload sizing",
+            "_liked_by": "[\"a@x.com\"]",            // valid JSON -> kept
+            "_comments": Value::Null,                 // null -> kept
+            "_seen": "not json",                      // bad -> null
+            "customer_name": "Acme",                  // non-reserved -> untouched
+        });
+        sanitize_meta_json(&mut row);
+        assert_eq!(row["_assign"], Value::Null);
+        assert_eq!(row["_liked_by"], json!("[\"a@x.com\"]"));
+        assert_eq!(row["_comments"], Value::Null);
+        assert_eq!(row["_seen"], Value::Null);
+        assert_eq!(row["customer_name"], json!("Acme"));
     }
 
     #[test]
