@@ -4,6 +4,12 @@
 test suite against it, judging per test class how strictly ferro *should* match, and producing a
 precise fix plan — while keeping ferro minimal and low-footprint.
 
+> **Status (applied):** the fix plan in `06-fix-plan.md` (FIX-1..FIX-9 + the behavioral appendix)
+> has been **implemented**. See `08-implementation-status.md` for the per-fix landing record,
+> regression locks, and the deliberately scoped-out items. `_specs/` holds the transcribed
+> Frappe-source specs the behavioral fixes were built against. Regression suite:
+> `measurements/verify.py` — **105 passing, 0 failing**, deterministic.
+
 **Date:** 2026-06-10 · **Frappe:** v17 (17.0.0-dev) · **Bench:** `bench-cpython314`, SQLite,
 only `frappe` installed · **ferro:** working tree (default pure-Rust build).
 
