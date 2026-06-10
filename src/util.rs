@@ -78,6 +78,28 @@ pub fn iso_week(y: i64, m: u32, d: u32) -> i64 {
     }
 }
 
+/// Parse a Frappe naive datetime "YYYY-MM-DD HH:MM:SS[.ffffff]" to unix seconds (UTC). None on
+/// malformed input. Used for session-expiry math.
+pub fn parse_civil_to_unix(s: &str) -> Option<i64> {
+    let s = s.trim();
+    let (date, time) = s.split_once(' ').or_else(|| s.split_once('T'))?;
+    let mut d = date.split('-');
+    let y: i64 = d.next()?.parse().ok()?;
+    let mo: u32 = d.next()?.parse().ok()?;
+    let da: u32 = d.next()?.parse().ok()?;
+    let time = time.split('.').next().unwrap_or(time);
+    let mut t = time.split(':');
+    let h: i64 = t.next()?.parse().ok()?;
+    let mi: i64 = t.next().unwrap_or("0").parse().ok()?;
+    let se: i64 = t.next().unwrap_or("0").parse().ok()?;
+    Some(days_from_civil(y, mo, da) * 86_400 + h * 3600 + mi * 60 + se)
+}
+
+/// Current unix seconds (UTC).
+pub fn now_unix() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64
+}
+
 /// Frappe `cint`: parse an int, falling back through float, default 0. Used for Check/Int casts.
 pub fn cint(s: &str) -> i64 {
     let t = s.trim();

@@ -472,7 +472,7 @@ fn request_cli(args: &[String]) {
     } else {
         Some("application/x-www-form-urlencoded")
     };
-    let (status, value) = route(&con, &app, &method, &url, &body, ct, auth_header.as_deref());
+    let (status, value) = route(&con, &app, &method, &url, &body, ct, auth_header.as_deref(), None);
     println!("HTTP {status}");
     println!("{}", serde_json::to_string_pretty(&value).unwrap_or_default());
 }
@@ -873,6 +873,7 @@ fn handle(mut req: tiny_http::Request, con: &Connection, app: &App) {
     let url = req.url().to_string();
     let auth_header = header_value(&req, "Authorization");
     let content_type = header_value(&req, "Content-Type");
+    let sid = header_value(&req, "Cookie").and_then(|c| cookie_value(&c, "sid"));
 
     // Body-size DoS guard: reject oversize bodies up front, and cap the actual read.
     if let Some(cl) = header_value(&req, "Content-Length").and_then(|s| s.parse::<u64>().ok()) {
@@ -895,7 +896,7 @@ fn handle(mut req: tiny_http::Request, con: &Connection, app: &App) {
     // Desk mode: serve static assets / the HTML shell / socket.io 404 / the /app->/desk redirect
     // before the JSON API router. These are "raw" responses (HTML, binary, custom headers).
     if let Some(desk) = &app.desk {
-        let user = match auth::resolve_user(con, auth_header.as_deref(), &app.default_user, app.encryption_key.as_deref()) {
+        let user = match auth::resolve_user_session(con, auth_header.as_deref(), sid.as_deref(), &app.default_user, app.encryption_key.as_deref()) {
             AuthOutcome::Ok(id) => id.user,
             AuthOutcome::Unauthorized => app.default_user.clone(),
         };
@@ -912,21 +913,45 @@ fn handle(mut req: tiny_http::Request, con: &Connection, app: &App) {
         }
     }
 
-    let resp = route(con, app, &method, &url, &body, content_type.as_deref(), auth_header.as_deref());
+    let resp = route(con, app, &method, &url, &body, content_type.as_deref(), auth_header.as_deref(), sid.as_deref());
 
-    // Login: set the identity cookies the SPA reads (sid is cosmetic in ferro's default-user mode).
-    if app.desk.is_some() && resp.0 == 200 && url.split('?').next() == Some("/api/method/login") {
+    let path = url.split('?').next().unwrap_or("");
+    // Login (FIX-2): on a verified login, mint a real tabSessions row and set the sid cookie to it,
+    // so subsequent cookie requests resolve to the credentialed user (not the server default).
+    if app.desk.is_some() && path == "/api/method/login" && resp.0 == 200 {
+        let user = resp.1.get("user").and_then(|v| v.as_str()).unwrap_or(&app.default_user).to_string();
+        let real_sid = auth::create_session(con, &user).unwrap_or_else(util::random_name);
         let mut raw = desk::RawResp::json(resp.0, &resp.1);
-        attach_login_cookies(&mut raw, &app.default_user);
+        attach_login_cookies(&mut raw, &user, &real_sid);
+        return respond_raw(req, raw);
+    }
+    // Logout: invalidate the session and clear the cookie.
+    if app.desk.is_some() && (path == "/api/method/logout" || path == "/api/method/frappe.auth.logout") {
+        if let Some(s) = &sid {
+            auth::delete_session(con, s);
+        }
+        let mut raw = desk::RawResp::json(resp.0, &resp.1);
+        raw.headers.push(("Set-Cookie".into(), "sid=Guest; Path=/; HttpOnly; SameSite=Lax".into()));
         return respond_raw(req, raw);
     }
 
     respond_json(req, resp);
 }
 
-/// Append the Set-Cookie headers a Frappe login normally returns, so the SPA can read the user.
-fn attach_login_cookies(raw: &mut desk::RawResp, user: &str) {
-    let sid = util::random_name();
+/// Parse a single cookie value out of a `Cookie:` header (`a=1; sid=xyz; b=2`).
+fn cookie_value(cookie_header: &str, key: &str) -> Option<String> {
+    cookie_header.split(';').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        if k.trim() == key {
+            Some(v.trim().to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// Append the Set-Cookie headers a Frappe login returns, carrying the real sid + credentialed user.
+fn attach_login_cookies(raw: &mut desk::RawResp, user: &str, sid: &str) {
     for c in [
         format!("sid={sid}; Path=/; HttpOnly; SameSite=Lax"),
         "system_user=yes; Path=/; SameSite=Lax".to_string(),
@@ -1041,6 +1066,7 @@ fn v1_to_v2(dev: bool, status: u16, body: Value) -> (u16, Value) {
     (status, json!({ "data": data }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn route(
     con: &Connection,
     app: &App,
@@ -1049,9 +1075,10 @@ fn route(
     body: &str,
     content_type: Option<&str>,
     auth_header: Option<&str>,
+    sid: Option<&str>,
 ) -> (u16, Value) {
     let (segments, params) = util::parse_url(url);
-    let ident = match auth::resolve_user(con, auth_header, &app.default_user, app.encryption_key.as_deref()) {
+    let ident = match auth::resolve_user_session(con, auth_header, sid, &app.default_user, app.encryption_key.as_deref()) {
         AuthOutcome::Ok(id) => id,
         AuthOutcome::Unauthorized => {
             // B-REST-1: a /api/v2/* request must get the v2 error envelope, not the v1 shape.

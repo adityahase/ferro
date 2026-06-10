@@ -13,6 +13,7 @@
 
 use crate::crypto;
 use crate::meta::Meta;
+use crate::util;
 use rusqlite::Connection;
 use std::collections::HashSet;
 
@@ -40,13 +41,32 @@ pub fn resolve_user(
     default_user: &str,
     enc_key: Option<&str>,
 ) -> AuthOutcome {
+    resolve_user_session(con, auth_header, None, default_user, enc_key)
+}
+
+/// Like `resolve_user`, but also honors a `sid` session cookie (FIX-2): with no Authorization
+/// header, a valid non-expired `tabSessions` row resolves to its user; an absent/invalid/expired
+/// sid falls through to `default_user` (an unauthenticated request, not a 401).
+pub fn resolve_user_session(
+    con: &Connection,
+    auth_header: Option<&str>,
+    sid: Option<&str>,
+    default_user: &str,
+    enc_key: Option<&str>,
+) -> AuthOutcome {
     let h = match auth_header {
         Some(h) if !h.trim().is_empty() => h.trim(),
         _ => {
+            // No token/basic header: try the session cookie before the default user.
+            if let Some(sid) = sid.map(str::trim).filter(|s| !s.is_empty() && *s != "Guest") {
+                if let Some(user) = user_for_sid(con, sid) {
+                    return AuthOutcome::Ok(Identity { user, via: "session" });
+                }
+            }
             return AuthOutcome::Ok(Identity {
                 user: default_user.to_string(),
                 via: "default",
-            })
+            });
         }
     };
 
@@ -269,6 +289,108 @@ pub fn readable_permlevels(con: &Connection, meta: &Meta, user: &str) -> Option<
     }
     set.insert(0); // permlevel-0 fields are always readable when read is granted at all
     Some(set)
+}
+
+// ----------------------------------------------------------------- sessions (FIX-2)
+
+/// Resolve the user behind a session id, honoring `status` and `session_expiry`. None if the
+/// session is missing, logged out, or expired.
+pub fn user_for_sid(con: &Connection, sid: &str) -> Option<String> {
+    let (user, lastupdate, status): (String, Option<String>, Option<String>) = con
+        .query_row(
+            "SELECT user, lastupdate, status FROM \"tabSessions\" WHERE sid=?1",
+            [sid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok()?;
+    if status.as_deref() == Some("Logged Out") {
+        return None;
+    }
+    if let Some(lu) = lastupdate.as_deref().and_then(util::parse_civil_to_unix) {
+        if util::now_unix() - lu > session_expiry_secs(con) {
+            return None;
+        }
+    }
+    if user.is_empty() || user == "Guest" {
+        None
+    } else {
+        Some(user)
+    }
+}
+
+/// `System Settings.session_expiry` ("HH:MM:SS", hours may exceed 24) in seconds; default 6h.
+fn session_expiry_secs(con: &Connection) -> i64 {
+    let raw: Option<String> = con
+        .query_row(
+            "SELECT value FROM \"tabSingles\" WHERE doctype='System Settings' AND field='session_expiry'",
+            [],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten();
+    let def = 6 * 3600;
+    let s = match raw.as_deref() {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return def,
+    };
+    let mut it = s.split(':');
+    let h: i64 = it.next().and_then(|x| x.parse().ok()).unwrap_or(6);
+    let m: i64 = it.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+    let sec: i64 = it.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+    let total = h * 3600 + m * 60 + sec;
+    if total <= 0 {
+        def
+    } else {
+        total
+    }
+}
+
+/// Verify a username/password login: resolve `usr` (by name, email, or username) to an enabled user
+/// and check `pwd` against `__Auth(fieldname='password')` (passlib pbkdf2_sha256). Returns the
+/// resolved user name on success — the honest replacement for the old accept-anything login stub.
+pub fn verify_login(con: &Connection, usr: &str, pwd: &str) -> Option<String> {
+    let usr = usr.trim();
+    if usr.is_empty() || pwd.is_empty() {
+        return None;
+    }
+    let user: String = con
+        .query_row(
+            "SELECT name FROM \"tabUser\" \
+             WHERE (name=?1 OR email=?1 OR username=?1) AND COALESCE(enabled,1)=1 LIMIT 1",
+            [usr],
+            |r| r.get(0),
+        )
+        .ok()?;
+    let hash: String = con
+        .query_row(
+            "SELECT password FROM \"__Auth\" WHERE doctype='User' AND name=?1 AND fieldname='password'",
+            [&user],
+            |r| r.get(0),
+        )
+        .ok()?;
+    if crypto::passlib_pbkdf2_sha256_verify(pwd, &hash) {
+        Some(user)
+    } else {
+        None
+    }
+}
+
+/// Mint a new session row for `user`, returning its sid.
+pub fn create_session(con: &Connection, user: &str) -> Option<String> {
+    let sid = format!("{}{}", util::random_name(), util::random_name());
+    let now = util::now_datetime();
+    con.execute(
+        "INSERT INTO \"tabSessions\" (sid, user, lastupdate, status, sessiondata) \
+         VALUES (?1, ?2, ?3, 'Active', '')",
+        rusqlite::params![sid, user, now],
+    )
+    .ok()?;
+    Some(sid)
+}
+
+/// Invalidate a session (logout).
+pub fn delete_session(con: &Connection, sid: &str) {
+    let _ = con.execute("DELETE FROM \"tabSessions\" WHERE sid=?1", [sid]);
 }
 
 /// Provision an API key pair for a user (sets tabUser.api_key, upserts __Auth secret as plaintext).

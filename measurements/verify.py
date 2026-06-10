@@ -4,7 +4,7 @@
 Uses the in-process `ferro request` CLI (full route/auth/orm stack, no socket). Sets up DB
 fixtures directly, runs assertions for every fix from the fidelity audit, then cleans up.
 """
-import json, os, re, subprocess, sys, sqlite3, base64
+import json, os, re, subprocess, sys, sqlite3, base64, hashlib
 
 SITE = "/home/frappe/benches/bench-cpython314/sites/mysite.sqlite"
 DB = SITE + "/db/_d3b3bc5c1c1a19aa.db"
@@ -87,6 +87,16 @@ def setup():
     ex("DELETE FROM \"tabProperty Setter\" WHERE name='frt-ps-1'")
     ex("INSERT INTO \"tabProperty Setter\" (name,creation,modified,owner,modified_by,doc_type,doctype_or_field,field_name,property,property_type,value) "
        "VALUES ('frt-ps-1',datetime('now'),datetime('now'),'Administrator','Administrator','User','DocField','birth_date','permlevel','Int','1')")
+    # FIX-2: a login user with a known passlib pbkdf2_sha256 password (ferro verifies this format).
+    def passlib_hash(pw, rounds=29000):
+        salt = os.urandom(16)
+        dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, rounds, 32)
+        ab64 = lambda b: base64.b64encode(b).decode().replace("+", ".").rstrip("=")
+        return f"$pbkdf2-sha256${rounds}${ab64(salt)}${ab64(dk)}"
+    ex("INSERT OR IGNORE INTO tabUser (name, creation, modified, owner, modified_by, email, first_name, enabled, user_type) "
+       "VALUES ('ferro_login@example.com', datetime('now'), datetime('now'),'Administrator','Administrator','ferro_login@example.com','Ferro Login', 1, 'System User')")
+    ex("DELETE FROM __Auth WHERE name='ferro_login@example.com' AND fieldname='password'")
+    ex("INSERT INTO __Auth (doctype,name,fieldname,password,encrypted) VALUES ('User','ferro_login@example.com','password',?,0)", passlib_hash("ferrologin123"))
     # B-DOC-2: make ToDo.priority set_only_once via a Property Setter.
     ex("DELETE FROM \"tabProperty Setter\" WHERE name='frt-soo'")
     ex("INSERT INTO \"tabProperty Setter\" (name,creation,modified,owner,modified_by,doc_type,doctype_or_field,field_name,property,property_type,value) "
@@ -100,7 +110,9 @@ def cleanup():
         "DELETE FROM __Auth WHERE name IN ('ferro_test@example.com','ferro_enc@example.com') AND fieldname='api_secret'",
         "DELETE FROM \"tabCustom DocPerm\" WHERE role='Ferro Test'",
         "DELETE FROM tabNote WHERE title LIKE 'ferro-note-%'",
-        "DELETE FROM tabUser WHERE name IN ('ferro_test@example.com','ferro_enc@example.com')",
+        "DELETE FROM tabUser WHERE name IN ('ferro_test@example.com','ferro_enc@example.com','ferro_login@example.com')",
+        "DELETE FROM __Auth WHERE name='ferro_login@example.com'",
+        "DELETE FROM \"tabSessions\" WHERE user='ferro_login@example.com'",
         "DELETE FROM tabRole WHERE name='Ferro Test'",
         "DELETE FROM tabToDo WHERE description LIKE 'ferro-verify-%'",
         "DELETE FROM \"tabConsole Log\" WHERE type='y'",
@@ -128,6 +140,15 @@ def run_tests():
     check("bad credentials -> 401 (not silent Guest)", s==401, f"{s} {b}")
     s,b = req("GET","/api/method/frappe.auth.get_logged_user", token="ferroenckey:wrong")
     check("wrong fernet secret -> 401", s==401, f"{s} {b}")
+
+    print("\n[honest login (FIX-2)]")
+    # The old stub returned 200 for any password; login now verifies credentials.
+    s,b = req("POST","/api/method/login", {"usr":"ferro_login@example.com","pwd":"ferrologin123"}, desk=True)
+    check("login with correct password -> 200 + resolved user", s==200 and b.get("user")=="ferro_login@example.com", f"{s} {b}")
+    s,b = req("POST","/api/method/login", {"usr":"ferro_login@example.com","pwd":"WRONG-PASSWORD"}, desk=True)
+    check("login with wrong password -> 401 (not silent 200)", s==401, f"{s} {b}")
+    s,b = req("POST","/api/method/login", {"usr":"nobody@nowhere.invalid","pwd":"x"}, desk=True)
+    check("login for unknown user -> 401", s==401, f"{s} {b}")
 
     print("\n[list query]")
     s,b = req("GET",'/api/resource/DocType?fields=["name"]&limit_page_length=5', user=ADMIN)

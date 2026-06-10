@@ -580,12 +580,8 @@ pub fn route_method(
     let args = collect_args(params, body, content_type);
 
     let result: (u16, Value) = match name {
-        // ---- login / session (cookies are set by the caller) ----
-        "login" => (200, json!({
-            "message": "Logged In",
-            "home_page": "/app",
-            "full_name": user,
-        })),
+        // ---- login / session (the caller mints the session + sets cookies on success) ----
+        "login" => method_login(con, &args),
         "logout" | "frappe.auth.logout" => message(Value::Null),
 
         // ---- boot-time / toolbar methods (stubs are sufficient for Desk to run) ----
@@ -657,6 +653,29 @@ pub fn route_method(
 }
 
 // ----------------------------------------------------------------- method implementations
+
+/// `login` — verify credentials (FIX-2): the old stub returned 200 for any password. Now we resolve
+/// `usr` + check `pwd` against the stored passlib hash; on success the response carries the resolved
+/// `user` so the HTTP layer can mint a session + set the sid cookie. Failure → 401 (Frappe shape).
+fn method_login(con: &Connection, args: &HashMap<String, String>) -> (u16, Value) {
+    let usr = args.get("usr").map(|s| s.as_str()).unwrap_or("");
+    let pwd = args.get("pwd").map(|s| s.as_str()).unwrap_or("");
+    match auth::verify_login(con, usr, pwd) {
+        Some(user) => {
+            let full_name: Option<String> = con
+                .query_row("SELECT full_name FROM \"tabUser\" WHERE name=?1", [&user], |r| r.get(0))
+                .ok()
+                .flatten();
+            (200, json!({
+                "message": "Logged In",
+                "home_page": "/app",
+                "full_name": full_name.unwrap_or_else(|| user.clone()),
+                "user": user,
+            }))
+        }
+        None => (401, json!({ "message": "Invalid login credentials" })),
+    }
+}
 
 fn get_meta(metas: &MetaCache, con: &Connection, doctype: &str) -> Result<Arc<Meta>, (u16, Value)> {
     metas.get(con, doctype).map_err(|e| match e {
