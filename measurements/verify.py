@@ -122,7 +122,7 @@ def cleanup():
         "DELETE FROM tabUser WHERE name IN ('ferro_test@example.com','ferro_enc@example.com','ferro_login@example.com')",
         "DELETE FROM __Auth WHERE name='ferro_login@example.com'",
         "DELETE FROM \"tabSessions\" WHERE user='ferro_login@example.com'",
-        "DELETE FROM tabRole WHERE name='Ferro Test'",
+        "DELETE FROM tabRole WHERE name IN ('Ferro Test','ferro-hack-role')",
         "DELETE FROM tabToDo WHERE description LIKE 'ferro-verify-%'",
         "DELETE FROM \"tabConsole Log\" WHERE type='y'",
         "DELETE FROM \"tabCustom Field\" WHERE name IN ('frt-cf-1','frt-notecf')",
@@ -202,6 +202,13 @@ def run_tests():
     check("client.get permlevel0 user reads User -> 200", s==200, f"{s} {b}")
     check("client.get does NOT leak api_key (permlevel 1)", "api_key" not in d, f"keys={list(d)[:8]}")
     check("client.get strips null-valued keys (no_nulls=True)", all(v is not None for v in d.values()), f"nulls={[k for k,v in d.items() if v is None]}")
+    # The desk FORM-loader read + the desk WRITE path must enforce the same gate (FIX-9 extension).
+    s,b = req("GET", "/api/method/frappe.desk.form.load.getdoc?doctype=User&name=Administrator", user="Guest", desk=True)
+    check("Guest frappe.desk.form.load.getdoc User -> 403 (no form-loader bypass)", s==403, f"{s} {b}")
+    s,b = req("GET", "/api/method/frappe.desk.form.load.getdoc?doctype=User&name=Administrator", user="Administrator", desk=True)
+    check("admin getdoc User -> 200 (desk form preserved)", s==200, f"{s} {b}")
+    s,b = req("POST","/api/method/frappe.client.save", {"doc":{"doctype":"Role","role_name":"ferro-hack-role"}}, token=TTOK, desk=True)
+    check("client.save without create perm -> 403 (no write bypass)", s==403, f"{s} {b}")
 
     print("\n[filter shapes (B-FIL-1/2/3)]")
     s,b = req("GET", '/api/resource/User?fields=["name"]&filters=[["name","in","[\\"Administrator\\",\\"Guest\\"]"]]', user=ADMIN)

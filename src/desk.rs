@@ -963,7 +963,7 @@ fn method_getdoctype(con: &Connection, metas: &MetaCache, args: &HashMap<String,
 }
 
 /// `frappe.desk.form.load.getdoc` — a single document plus (empty) docinfo.
-fn method_getdoc(con: &Connection, metas: &MetaCache, _user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_getdoc(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
         None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
@@ -976,7 +976,22 @@ fn method_getdoc(con: &Connection, metas: &MetaCache, _user: &str, args: &HashMa
         Ok(m) => m,
         Err(e) => return e,
     };
-    let acl = ReadAcl::all();
+    // Gate the form-loader read exactly like /api/resource and frappe.client.get (FIX-9): the Desk
+    // form path must not bypass read permissions either.
+    let (acl, owner_scope) = match read_perm(con, &meta, user) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    if let Some(ref u) = owner_scope {
+        if let Some(o) = orm::doc_owner(con, &meta, &name) {
+            if !auth::owns(&o, u) {
+                return (403, json!({
+                    "exc_type": "PermissionError",
+                    "message": format!("No 'read' permission for {user} on {doctype} {name}"),
+                }));
+            }
+        }
+    }
     match orm::get_doc(con, &meta, &acl, &name) {
         Ok(mut doc) => {
             if let Value::Object(ref mut o) = doc {
@@ -1027,11 +1042,18 @@ fn persist_one(con: &Connection, metas: &MetaCache, user: &str, doc: &Value) -> 
     let obj = doc.as_object().ok_or((417, json!({"exc_type": "ValidationError", "message": "doc must be an object"})))?;
     let doctype = obj.get("doctype").and_then(|v| v.as_str()).ok_or((417, json!({"exc_type": "ValidationError", "message": "doctype required"})))?.to_string();
     let meta = get_meta(metas, con, &doctype)?;
-    let acl = ReadAcl::all();
     let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let is_new = obj.get("__islocal").map(is_truthy).unwrap_or(false)
         || name.is_empty()
         || name.starts_with("new-");
+    // Gate the desk write path like /api/resource (FIX-9): client.save / savedocs / client.insert
+    // must enforce create/write permission (+ if_owner on update), not write any doctype freely.
+    let ptype = if is_new { "create" } else { "write" };
+    write_perm(con, &meta, user, &name, ptype)?;
+    // Read-back ACL respects the user's read permlevels (no higher-permlevel leak in the response).
+    let acl = ReadAcl {
+        permlevels: auth::readable_permlevels(con, &meta, user),
+    };
     let mut data: Map<String, Value> = obj.clone();
     // Write-path permlevel masking: drop fields this user may not write at their permlevel.
     if let Some(set) = auth::writable_permlevels(con, &meta, user) {
