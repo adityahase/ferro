@@ -21,6 +21,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::auth;
 use crate::meta::{Meta, MetaCache, MetaError};
 use crate::orm::{self, ListQuery, OrmError, ReadAcl};
 use crate::util;
@@ -604,7 +605,7 @@ pub fn route_method(
         "frappe.core.doctype.user.user.get_all_roles" => message(get_all_roles(con)),
         "frappe.core.doctype.user.user.get_timezones" => message(json!({"timezones": TIMEZONES})),
         "frappe.client.get_count" | "frappe.desk.reportview.get_count" => {
-            method_get_count(con, metas, &args)
+            method_get_count(con, metas, user, &args)
         }
 
         // ---- list view ----
@@ -639,8 +640,8 @@ pub fn route_method(
         "frappe.desk.form.save.savedocs" => method_savedocs(con, metas, user, &args),
         "frappe.client.save" | "frappe.client.insert" => method_client_save(con, metas, user, &args),
         "frappe.client.get" => method_client_get(con, metas, user, &args),
-        "frappe.client.get_value" => method_get_value(con, metas, &args),
-        "frappe.client.get_single_value" => method_get_single_value(con, metas, &args),
+        "frappe.client.get_value" => method_get_value(con, metas, user, &args),
+        "frappe.client.get_single_value" => method_get_single_value(con, metas, user, &args),
         "frappe.desk.form.load.get_docinfo" => message(empty_docinfo()),
 
         _ => {
@@ -745,8 +746,53 @@ fn map_orm_err(e: OrmError) -> (u16, Value) {
     }
 }
 
+/// Drop null-valued keys from a doc dict (and from each child row), mirroring Frappe's
+/// `doc.as_dict(no_nulls=True)` used by `frappe.client.get`.
+fn strip_nulls(v: Value) -> Value {
+    match v {
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .filter(|(_, val)| !val.is_null())
+                .map(|(k, val)| (k, strip_nulls(val)))
+                .collect(),
+        ),
+        Value::Array(arr) => Value::Array(arr.into_iter().map(strip_nulls).collect()),
+        other => other,
+    }
+}
+
+/// Resolve READ permission + the field/row ACL for a `frappe.client.*` / `frappe.desk.reportview.*`
+/// read, mirroring `route_resource` so the desk-method path enforces the same gate as `/api/resource`.
+/// Returns `(field ACL, owner_scope)` — `owner_scope` is `Some(user)` when every grant is `if_owner`,
+/// restricting the read to rows the user owns. Returns a 403 envelope when there is no read grant.
+fn read_perm(
+    con: &Connection,
+    meta: &Meta,
+    user: &str,
+) -> Result<(ReadAcl, Option<String>), (u16, Value)> {
+    let perm = auth::permission(con, meta, user, "read");
+    if !perm.allowed {
+        return Err((
+            403,
+            json!({
+                "exc_type": "PermissionError",
+                "message": format!("No 'read' permission for {user} on {}", meta.name),
+            }),
+        ));
+    }
+    let acl = ReadAcl {
+        permlevels: auth::readable_permlevels(con, meta, user),
+    };
+    let owner_scope = if perm.only_if_owner {
+        Some(user.to_string())
+    } else {
+        None
+    };
+    Ok((acl, owner_scope))
+}
+
 /// `frappe.desk.reportview.get` — list view data in Frappe's compressed `{keys, values}` form.
-fn method_reportview_get(con: &Connection, metas: &MetaCache, _user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_reportview_get(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
         None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
@@ -755,10 +801,13 @@ fn method_reportview_get(con: &Connection, metas: &MetaCache, _user: &str, args:
         Ok(m) => m,
         Err(e) => return e,
     };
+    let (acl, owner_scope) = match read_perm(con, &meta, user) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     let q = build_query(&meta, args);
     let keys = q.fields.clone();
-    let acl = ReadAcl::all();
-    match orm::get_list(con, &meta, &acl, &q, None) {
+    match orm::get_list(con, &meta, &acl, &q, owner_scope.as_deref()) {
         Ok(Value::Array(rows)) => {
             // project each row object into a values array in `keys` order
             let values: Vec<Value> = rows
@@ -779,7 +828,7 @@ fn method_reportview_get(con: &Connection, metas: &MetaCache, _user: &str, args:
 }
 
 /// `frappe.desk.reportview.get_list` / `frappe.client.get_list` — list of dicts.
-fn method_get_list(con: &Connection, metas: &MetaCache, _user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_get_list(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
         None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
@@ -788,16 +837,19 @@ fn method_get_list(con: &Connection, metas: &MetaCache, _user: &str, args: &Hash
         Ok(m) => m,
         Err(e) => return e,
     };
+    let (acl, owner_scope) = match read_perm(con, &meta, user) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     let q = build_query(&meta, args);
-    let acl = ReadAcl::all();
-    match orm::get_list(con, &meta, &acl, &q, None) {
+    match orm::get_list(con, &meta, &acl, &q, owner_scope.as_deref()) {
         Ok(v) => message(v),
         Err(e) => map_orm_err(e),
     }
 }
 
 /// `frappe.client.get_count` / `frappe.desk.reportview.get_count`.
-fn method_get_count(con: &Connection, metas: &MetaCache, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_get_count(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
         None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
@@ -806,11 +858,15 @@ fn method_get_count(con: &Connection, metas: &MetaCache, args: &HashMap<String, 
         Ok(m) => m,
         Err(e) => return e,
     };
+    let (_acl, owner_scope) = match read_perm(con, &meta, user) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     let filters = args
         .get("filters")
         .and_then(|f| serde_json::from_str::<Value>(f).ok())
         .unwrap_or(Value::Null);
-    match orm::count(con, &meta, &filters) {
+    match orm::count(con, &meta, &filters, owner_scope.as_deref()) {
         Ok(n) => message(json!(n)),
         Err(e) => map_orm_err(e),
     }
@@ -840,7 +896,7 @@ fn method_number_card_result(con: &Connection, metas: &MetaCache, args: &HashMap
         .and_then(|s| serde_json::from_str::<Value>(s).ok())
         .or_else(|| args.get("filters").and_then(|s| serde_json::from_str::<Value>(s).ok()))
         .unwrap_or(Value::Null);
-    match orm::count(con, &meta, &filters) {
+    match orm::count(con, &meta, &filters, None) {
         Ok(n) => message(json!(n)),
         Err(_) => message(json!(0)),
     }
@@ -1009,7 +1065,7 @@ fn is_truthy(v: &Value) -> bool {
 }
 
 /// `frappe.client.get` — one document (no docinfo wrapper).
-fn method_client_get(con: &Connection, metas: &MetaCache, _user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_client_get(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
         None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
@@ -1018,22 +1074,41 @@ fn method_client_get(con: &Connection, metas: &MetaCache, _user: &str, args: &Ha
         Ok(m) => m,
         Err(e) => return e,
     };
+    let (acl, owner_scope) = match read_perm(con, &meta, user) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     let name = args.get("name").cloned().unwrap_or_else(|| doctype.clone());
-    let acl = ReadAcl::all();
+    // if_owner row scoping: deny reading a doc the user doesn't own (mirrors route_resource).
+    if let Some(ref u) = owner_scope {
+        if let Some(o) = orm::doc_owner(con, &meta, &name) {
+            if !auth::owns(&o, u) {
+                return (403, json!({
+                    "exc_type": "PermissionError",
+                    "message": format!("No 'read' permission for {user} on {doctype} {name}"),
+                }));
+            }
+        }
+    }
     match orm::get_doc(con, &meta, &acl, &name) {
-        Ok(doc) => message(doc),
+        // frappe.client.get returns doc.as_dict(no_nulls=True) — strip null-valued keys.
+        Ok(doc) => message(strip_nulls(doc)),
         Err(e) => map_orm_err(e),
     }
 }
 
 /// `frappe.client.get_value` — selected fields of the first matching doc.
-fn method_get_value(con: &Connection, metas: &MetaCache, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_get_value(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
         None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
     };
     let meta = match get_meta(metas, con, &doctype) {
         Ok(m) => m,
+        Err(e) => return e,
+    };
+    let (acl, owner_scope) = match read_perm(con, &meta, user) {
+        Ok(v) => v,
         Err(e) => return e,
     };
     let mut q = build_query(&meta, args);
@@ -1044,8 +1119,7 @@ fn method_get_value(con: &Connection, metas: &MetaCache, args: &HashMap<String, 
         }
     }
     q.limit_page_length = 1;
-    let acl = ReadAcl::all();
-    match orm::get_list(con, &meta, &acl, &q, None) {
+    match orm::get_list(con, &meta, &acl, &q, owner_scope.as_deref()) {
         Ok(Value::Array(rows)) => message(rows.into_iter().next().unwrap_or(json!({}))),
         Ok(v) => message(v),
         Err(e) => map_orm_err(e),
@@ -1053,11 +1127,18 @@ fn method_get_value(con: &Connection, metas: &MetaCache, args: &HashMap<String, 
 }
 
 /// `frappe.client.get_single_value` — one field of a Single doctype.
-fn method_get_single_value(con: &Connection, metas: &MetaCache, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_get_single_value(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
         None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
     };
+    let meta = match get_meta(metas, con, &doctype) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    if let Err(e) = read_perm(con, &meta, user) {
+        return e;
+    }
     let field = args.get("field").cloned().unwrap_or_default();
     // tabSingles stores single-doctype values as (doctype, field, value) rows.
     let val: Option<String> = con

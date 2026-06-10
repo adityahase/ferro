@@ -221,7 +221,7 @@ fn count(doctype: &str, filters_json: Option<&str>) -> PyResult<i64> {
             Some(f) => parse_json(f)?,
             None => Value::Null,
         };
-        orm::count(con, &meta, &filters).map_err(orm_err)
+        orm::count(con, &meta, &filters, None).map_err(orm_err)
     })
 }
 

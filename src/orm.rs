@@ -969,10 +969,22 @@ pub fn doc_owner(con: &Connection, meta: &Meta, name: &str) -> Option<String> {
 
 /// COUNT for list metadata.
 #[allow(dead_code)]
-pub fn count(con: &Connection, meta: &Meta, filters: &Value) -> Result<i64, OrmError> {
+pub fn count(
+    con: &Connection,
+    meta: &Meta,
+    filters: &Value,
+    owner_scope: Option<&str>,
+) -> Result<i64, OrmError> {
     let acl = ReadAcl::all();
     let mut where_parts = Vec::new();
     let mut binds: Vec<SqlValue> = Vec::new();
+    // if_owner permission scoping: only count rows the user owns.
+    if let Some(owner) = owner_scope {
+        if meta.has_column("owner") {
+            where_parts.push(format!("{} = ?", quote_ident("owner")));
+            binds.push(SqlValue::Text(owner.to_string()));
+        }
+    }
     for c in parse_filters(meta, &acl, filters)? {
         where_parts.push(c.sql);
         binds.extend(c.binds);

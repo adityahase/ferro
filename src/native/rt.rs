@@ -633,7 +633,7 @@ pub fn db_count(ctx: &mut Ctx, dt: &Value, filters: Option<&Value>) -> Result<Va
     let dt = as_str(dt);
     let meta = meta_of(ctx, &dt)?;
     let f = filters.cloned().unwrap_or(Value::Null);
-    Ok(Value::from(orm::count(ctx.con, &meta, &f)?))
+    Ok(Value::from(orm::count(ctx.con, &meta, &f, None)?))
 }
 
 /// frappe.get_all / frappe.db.get_all / get_list — returns array of dicts (or names).

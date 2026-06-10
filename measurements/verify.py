@@ -22,7 +22,7 @@ def check(name, cond, detail=""):
         FAIL += 1
         print(f"  FAIL  {name}   {detail}")
 
-def req(method, url, body=None, token=None, user=None):
+def req(method, url, body=None, token=None, user=None, desk=False):
     args = [FERRO, "request", SITE, method, url]
     if body is not None:
         args.append(body if isinstance(body, str) else json.dumps(body))
@@ -30,6 +30,8 @@ def req(method, url, body=None, token=None, user=None):
         args += ["--token", token]
     if user:
         args += ["--user", user]
+    if desk:
+        args.append("--desk")
     p = subprocess.run(args, capture_output=True, text=True, timeout=30)
     out = p.stdout
     m = re.match(r"HTTP (\d+)\n(.*)", out, re.S)
@@ -120,6 +122,35 @@ def run_tests():
     s,b = req("GET",'/api/resource/User?fields=["name"]&filters=[["name","in","Administrator,Guest"]]', user=ADMIN)
     names = sorted(d["name"] for d in b.get("data",[]))
     check("'in' with comma-separated string splits", s==200 and names==["Administrator","Guest"], f"{s} {names}")
+
+    print("\n[role resolution: Guest is not 'All' (FIX-1)]")
+    # ToDo grants read to role "All". Before FIX-1 Guest inherited "All" and could read it.
+    s,b = req("GET", '/api/resource/ToDo?limit_page_length=1', user="Guest")
+    check("Guest GET /api/resource/ToDo -> 403 (no 'All' role)", s==403 and b.get("exc_type")=="PermissionError", f"{s} {b}")
+    s,b = req("GET", '/api/resource/ToDo/anything', user="Guest")
+    check("Guest GET /api/resource/ToDo/<name> -> 403", s==403, f"{s} {b}")
+    # A normal System User still inherits "All", so it CAN read an All-granted doctype.
+    s,b = req("GET", '/api/resource/ToDo?limit_page_length=1', token=TTOK)
+    check("System user still inherits 'All' (reads ToDo)", s==200, f"{s} {b}")
+
+    print("\n[frappe.client.* permission gate (FIX-9)]")
+    # The desk method path must enforce the SAME read gate as /api/resource. Before FIX-9 Guest
+    # could read User emails via frappe.client.get_list/get_value/get_count (perm bypass).
+    s,b = req("GET", '/api/method/frappe.client.get_list?doctype=User&fields=["name","email"]', user="Guest", desk=True)
+    check("Guest frappe.client.get_list User -> 403 (no leak)", s==403, f"{s} {b}")
+    s,b = req("GET", '/api/method/frappe.client.get_value?doctype=User&fieldname=email&filters={}', user="Guest", desk=True)
+    check("Guest frappe.client.get_value User.email -> 403", s==403, f"{s} {b}")
+    s,b = req("GET", '/api/method/frappe.client.get_count?doctype=User', user="Guest", desk=True)
+    check("Guest frappe.client.get_count User -> 403", s==403, f"{s} {b}")
+    # Admin (and the Desk it powers) still works through the same path.
+    s,b = req("GET", '/api/method/frappe.client.get_list?doctype=User&fields=["name"]&limit_page_length=2', user="Administrator", desk=True)
+    check("Admin frappe.client.get_list User -> 200 (desk preserved)", s==200 and isinstance(b.get("message"), list), f"{s} {b}")
+    # permlevel masking + null-stripping holds through the desk path too.
+    s,b = req("GET", '/api/method/frappe.client.get?doctype=User&name=Administrator', token=TTOK, desk=True)
+    d = b.get("message", {}) if isinstance(b.get("message"), dict) else {}
+    check("client.get permlevel0 user reads User -> 200", s==200, f"{s} {b}")
+    check("client.get does NOT leak api_key (permlevel 1)", "api_key" not in d, f"keys={list(d)[:8]}")
+    check("client.get strips null-valued keys (no_nulls=True)", all(v is not None for v in d.values()), f"nulls={[k for k,v in d.items() if v is None]}")
 
     print("\n[permlevel masking]")
     s,b = req("GET","/api/resource/User/Administrator", user=ADMIN)

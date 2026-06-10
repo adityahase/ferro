@@ -373,6 +373,7 @@ fn request_cli(args: &[String]) {
     let mut default_user = "Administrator".to_string();
     let mut token: Option<String> = None;
     let mut dev = false;
+    let mut enable_desk = false;
     let mut i = 3;
     while i < args.len() {
         match args[i].as_str() {
@@ -388,6 +389,12 @@ fn request_cli(args: &[String]) {
                 dev = true;
                 i += 1;
             }
+            // Expose the `frappe.client.*` / `frappe.desk.*` method surface in-process, so the
+            // verification harness can exercise the desk-method permission path without a socket.
+            "--desk" => {
+                enable_desk = true;
+                i += 1;
+            }
             other => {
                 if body.is_empty() {
                     body = other.to_string();
@@ -397,12 +404,22 @@ fn request_cli(args: &[String]) {
         }
     }
     let con = open_conn(&resolve_db_path(path));
+    let desk = if enable_desk {
+        Some(Arc::new(desk::Desk::new(
+            default_assets_dir(path),
+            None,
+            site_apps_dir(path),
+            load_installed_apps(path),
+        )))
+    } else {
+        None
+    };
     let app = App {
         metas: Arc::new(MetaCache::new(512)),
         default_user,
         encryption_key: load_encryption_key(path),
         dev,
-        desk: None,
+        desk,
         spa: None,
         #[cfg(feature = "python")]
         pyfall: None,
