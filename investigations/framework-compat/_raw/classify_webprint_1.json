@@ -1,0 +1,292 @@
+[
+  {
+    "file": "frappe/printing/doctype/letter_head/test_letter_head.py",
+    "class": "TestLetterHead",
+    "broad_area": "Reports-Print",
+    "sub_area": "letter head auto-image and export to filesystem",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests in-process Python logic for Letter Head document insert and file-system export; ferro does not implement the print/letter-head subsystem at all."
+  },
+  {
+    "file": "frappe/printing/doctype/network_printer_settings/test_network_printer_settings.py",
+    "class": "TestNetworkPrinterSettings",
+    "broad_area": "Reports-Print",
+    "sub_area": "network printer settings doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class (pass body) for the Network Printer Settings doctype; no assertions and no HTTP calls, entirely outside ferro's scope."
+  },
+  {
+    "file": "frappe/printing/doctype/print_format/test_print_format.py",
+    "class": "TestPrintFormat",
+    "broad_area": "Reports-Print",
+    "sub_area": "frappe.get_print HTML rendering with style variants and doc export",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python-side print HTML generation via frappe.get_print and doc.export_doc; ferro does not implement print format rendering."
+  },
+  {
+    "file": "frappe/printing/doctype/print_format_field_template/test_print_format_field_template.py",
+    "class": "TestPrintFormatFieldTemplate",
+    "broad_area": "Reports-Print",
+    "sub_area": "print format field template doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; the doctype is part of the print subsystem which ferro does not implement."
+  },
+  {
+    "file": "frappe/printing/doctype/print_heading/test_print_heading.py",
+    "class": "TestPrintHeading",
+    "broad_area": "Reports-Print",
+    "sub_area": "print heading doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; the Print Heading doctype is part of the print subsystem not implemented by ferro."
+  },
+  {
+    "file": "frappe/printing/doctype/print_settings/test_print_settings.py",
+    "class": "TestPrintSettings",
+    "broad_area": "Reports-Print",
+    "sub_area": "print settings doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; Print Settings is part of the printing subsystem ferro intentionally does not implement."
+  },
+  {
+    "file": "frappe/printing/doctype/print_style/test_print_style.py",
+    "class": "TestPrintStyle",
+    "broad_area": "Reports-Print",
+    "sub_area": "print style doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; Print Style is a printing subsystem doctype not covered by ferro."
+  },
+  {
+    "file": "frappe/website/doctype/about_us_settings/test_about_us_settings.py",
+    "class": "TestAboutUsSettings",
+    "broad_area": "Web-Website",
+    "sub_area": "about us settings doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; the website CMS settings layer is not part of ferro's REST/Desk data plane."
+  },
+  {
+    "file": "frappe/website/doctype/color/test_color.py",
+    "class": "TestColor",
+    "broad_area": "Web-Website",
+    "sub_area": "color doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; the Color doctype is a website theming concern irrelevant to ferro."
+  },
+  {
+    "file": "frappe/website/doctype/discussion_reply/test_discussion_reply.py",
+    "class": "TestDiscussionReply",
+    "broad_area": "Web-Website",
+    "sub_area": "discussion reply doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; the Discussion Reply doctype is a website social feature not implemented by ferro."
+  },
+  {
+    "file": "frappe/website/doctype/discussion_topic/test_discussion_topic.py",
+    "class": "TestDiscussionTopic",
+    "broad_area": "Web-Website",
+    "sub_area": "discussion topic submit and edit permission enforcement",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests website discussion submit_discussion() Python function and per-owner permission logic in-process; this is a website social feature outside ferro's REST data plane."
+  },
+  {
+    "file": "frappe/website/doctype/help_article/test_help_article.py",
+    "class": "TestHelpArticle",
+    "broad_area": "Web-Website",
+    "sub_area": "help article feedback and category-disable cascade",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests website CMS help article add_feedback() and published flag cascade in-process; this is a website content management feature not implemented by ferro."
+  },
+  {
+    "file": "frappe/website/doctype/help_category/test_help_category.py",
+    "class": "TestHelpCategory",
+    "broad_area": "Web-Website",
+    "sub_area": "help category doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; Help Category is a website CMS doctype outside ferro's scope."
+  },
+  {
+    "file": "frappe/website/doctype/personal_data_deletion_request/test_personal_data_deletion_request.py",
+    "class": "TestPersonalDataDeletionRequest",
+    "broad_area": "Web-Website",
+    "sub_area": "GDPR personal data deletion workflow and anonymization",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the GDPR data deletion Python workflow (process_data_deletion_request, anonymization) in-process; this is a website/compliance feature ferro does not implement."
+  },
+  {
+    "file": "frappe/website/doctype/personal_data_download_request/test_personal_data_download_request.py",
+    "class": "TestRequestPersonalData",
+    "broad_area": "Web-Website",
+    "sub_area": "GDPR personal data download request, file generation and email",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests GDPR data download request file generation and email sending in-process via Python; this is a website/email compliance feature not part of ferro's scope."
+  },
+  {
+    "file": "frappe/website/doctype/portal_settings/test_portal_settings.py",
+    "class": "TestPortalSettings",
+    "broad_area": "Web-Website",
+    "sub_area": "portal settings doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; Portal Settings is a website CMS configuration doctype outside ferro's scope."
+  },
+  {
+    "file": "frappe/website/doctype/utm_campaign/test_utm_campaign.py",
+    "class": "TestUTMCampaign",
+    "broad_area": "Web-Website",
+    "sub_area": "UTM campaign tracking doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; UTM campaign tracking is a website analytics doctype not relevant to ferro's REST/Desk data plane."
+  },
+  {
+    "file": "frappe/website/doctype/utm_medium/test_utm_medium.py",
+    "class": "TestUTMMedium",
+    "broad_area": "Web-Website",
+    "sub_area": "UTM medium tracking doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; UTM medium tracking is a website analytics doctype outside ferro's scope."
+  },
+  {
+    "file": "frappe/website/doctype/utm_source/test_utm_source.py",
+    "class": "TestUTMSource",
+    "broad_area": "Web-Website",
+    "sub_area": "UTM source tracking doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; UTM source tracking is a website analytics doctype not implemented by ferro."
+  },
+  {
+    "file": "frappe/website/doctype/web_form/test_web_form.py",
+    "class": "TestWebForm",
+    "broad_area": "Web-Website",
+    "sub_area": "web form accept, edit, render and HTML meta tags via website serve layer",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the web form Python accept() function and website serve layer rendering in-process; web forms are a CMS/website feature ferro does not implement."
+  },
+  {
+    "file": "frappe/website/doctype/web_page/test_web_page.py",
+    "class": "TestWebPage",
+    "broad_area": "Web-Website",
+    "sub_area": "web page path resolution, content type switching and dynamic routes via website serve",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the website CMS path resolver and get_response_content() in-process Python; ferro serves app SPAs and the Desk SPA but not Frappe's CMS web pages."
+  },
+  {
+    "file": "frappe/website/doctype/web_page_view/test_web_page_view.py",
+    "class": "TestWebPageView",
+    "broad_area": "Web-Website",
+    "sub_area": "web page view tracking doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; Web Page View is a CMS analytics doctype outside ferro's scope."
+  },
+  {
+    "file": "frappe/website/doctype/web_template/test_web_template.py",
+    "class": "TestWebTemplate",
+    "broad_area": "Web-Website",
+    "sub_area": "web template rendering with Jinja, page builder sections and custom stylesheet",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe website template Jinja rendering via get_response() in-process; this is a CMS/website feature not part of ferro's implementation."
+  },
+  {
+    "file": "frappe/website/doctype/web_template_field/test_web_template_field.py",
+    "class": "TestWebTemplateField",
+    "broad_area": "Web-Website",
+    "sub_area": "web template field doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; Web Template Field is a CMS doctype outside ferro's scope."
+  },
+  {
+    "file": "frappe/website/doctype/website_route_meta/test_website_route_meta.py",
+    "class": "TestWebsiteRouteMeta",
+    "broad_area": "Web-Website",
+    "sub_area": "website route meta tag generation injected into CMS response HTML",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests meta tag injection into website CMS HTML responses via frappe's website serve layer in-process; ferro does not serve CMS web pages."
+  },
+  {
+    "file": "frappe/website/doctype/website_settings/test_website_settings.py",
+    "class": "TestWebsiteSettings",
+    "broad_area": "Web-Website",
+    "sub_area": "website top bar child items and redirect rule validation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests get_website_settings() context and redirect validation in-process Python; website CMS settings are not part of ferro's data plane."
+  },
+  {
+    "file": "frappe/website/doctype/website_sidebar/test_website_sidebar.py",
+    "class": "TestWebsiteSidebar",
+    "broad_area": "Web-Website",
+    "sub_area": "website sidebar doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; Website Sidebar is a CMS navigation doctype outside ferro's scope."
+  },
+  {
+    "file": "frappe/website/doctype/website_slideshow/test_website_slideshow.py",
+    "class": "TestWebsiteSlideshow",
+    "broad_area": "Web-Website",
+    "sub_area": "website slideshow doctype stub",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; Website Slideshow is a CMS content doctype not implemented by ferro."
+  },
+  {
+    "file": "frappe/website/doctype/website_theme/test_website_theme.py",
+    "class": "TestWebsiteTheme",
+    "broad_area": "Web-Website",
+    "sub_area": "website theme SCSS compilation, backup rotation and after-migrate hook",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests SCSS compilation, theme file backup rotation and after_migrate hook in-process Python; website theming is a CMS/asset-build feature not part of ferro's runtime."
+  }
+]

@@ -1,0 +1,472 @@
+[
+  {
+    "file": "frappe/automation/doctype/assignment_rule/test_assignment_rule.py",
+    "class": "TestAutoAssign",
+    "broad_area": "DocType-feature",
+    "sub_area": "assignment rule auto-assign (round-robin, load-balance, condition-based) via in-process frappe.db",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "All tests call frappe Python automation internals (assignment rule engine, ToDo writes) via in-process frappe.db; no HTTP. Ferro does not implement the assignment-rule automation subsystem."
+  },
+  {
+    "file": "frappe/automation/doctype/auto_repeat/test_auto_repeat.py",
+    "class": "TestAutoRepeat",
+    "broad_area": "DocType-feature",
+    "sub_area": "auto-repeat document scheduling (daily/weekly/monthly repetition) via in-process Python",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests invoke auto_repeat Python helpers (create_repeated_entries, get_auto_repeat_entries) directly via in-process frappe; no HTTP layer. Auto-repeat scheduling is a Python background-jobs subsystem not reimplemented by ferro."
+  },
+  {
+    "file": "frappe/automation/doctype/milestone/test_milestone.py",
+    "class": "TestMilestone",
+    "broad_area": "DocType-feature",
+    "sub_area": "milestone doctype (empty stub)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is pass with no test methods; no assertions or HTTP calls. Nothing to evaluate against ferro."
+  },
+  {
+    "file": "frappe/automation/doctype/milestone_tracker/test_milestone_tracker.py",
+    "class": "TestMilestoneTracker",
+    "broad_area": "DocType-feature",
+    "sub_area": "milestone tracker: hooks on doc save generate milestone records, tested in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests insert ToDo docs and check Milestone side-effects via frappe.get_all in-process; the milestone-tracker is a Python hook subsystem not implemented by ferro."
+  },
+  {
+    "file": "frappe/automation/doctype/reminder/test_reminder.py",
+    "class": "TestReminder",
+    "broad_area": "DocType-feature",
+    "sub_area": "reminder: create and send reminders, check notification_log in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call create_new_reminder/send_reminders Python functions and verify notification logs in-process via frappe; no HTTP. Reminder dispatch is a Python automation feature ferro does not implement."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestCommands",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench CLI commands (execute, restore, backup, recorder, set-password, version, list-apps) via subprocess",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests run bench CLI subprocesses; they exercise the Frappe bench Python toolchain, not ferro's HTTP runtime. Dev-tooling is out of scope for ferro."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestBackups",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench backup/restore CLI commands via subprocess",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests exercise bench backup/restore CLI via subprocess; pure Frappe Python tooling with no HTTP calls to ferro."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestRemoveApp",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench remove-app CLI: module deletion and dry-run",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call bench remove-app internals via in-process frappe; no HTTP. App management CLI is not part of ferro's scope."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestSiteMigration",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench migrate CLI",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Runs bench migrate via subprocess; Frappe Python migration tooling, not ferro's HTTP runtime."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestAddNewUser",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench add-user CLI command",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the bench add-user CLI subprocess; dev-tooling command outside ferro's scope."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestDBUtils",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench db-add-index CLI",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests bench db-add-index via subprocess; DB maintenance CLI unrelated to ferro HTTP runtime."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestSchedulerUtils",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench scheduler ready-for-migrate CLI check",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests bench scheduler subcommand via subprocess; scheduler tooling is out of ferro's scope."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestCommandUtils",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench_helper get_app_groups utility",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.utils.bench_helper.get_app_groups in-process; pure Python dev-tooling utility not related to ferro."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestDBCli",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench db-console CLI interactive DB shell",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests bench db-console via subprocess; DB interactive CLI is dev-tooling outside ferro's scope."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestSchedulerCLI",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench scheduler status/enable/disable/pause/resume CLI",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests scheduler management CLI via subprocess; background-job scheduling control is a Python subsystem not implemented by ferro."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestCLIImplementation",
+    "broad_area": "Dev-tooling",
+    "sub_area": "bench CLI error handling for missing/misspelled commands",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests bench CLI error output for unknown commands; pure dev-tooling unrelated to ferro."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestGunicornWorker",
+    "broad_area": "Dev-tooling",
+    "sub_area": "gunicorn worker spawn, HTTP ping, idle CPU usage",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests spawn a real gunicorn process and hit it over HTTP; tests CPython gunicorn worker behavior, not ferro."
+  },
+  {
+    "file": "frappe/commands/test_commands.py",
+    "class": "TestRQWorker",
+    "broad_area": "Background-jobs",
+    "sub_area": "RQ worker and pool idle CPU usage",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests spawn RQ background workers via bench and measure CPU; background Python job workers are not ferro's concern."
+  },
+  {
+    "file": "frappe/contacts/doctype/address/test_address.py",
+    "class": "TestAddress",
+    "broad_area": "DocType-feature",
+    "sub_area": "address template rendering and address_query link-based search via in-process frappe",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call get_address_display and address_query Python helpers directly in-process; these are Python controller features ferro does not implement."
+  },
+  {
+    "file": "frappe/contacts/doctype/address_template/test_address_template.py",
+    "class": "TestAddressTemplate",
+    "broad_area": "DocType-feature",
+    "sub_area": "address template default/unset/delete constraints in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests insert/modify/delete AddressTemplate docs via frappe in-process; Python DocType controller logic not in ferro's scope."
+  },
+  {
+    "file": "frappe/contacts/doctype/contact/test_contact.py",
+    "class": "TestContact",
+    "broad_area": "DocType-feature",
+    "sub_area": "contact default email/phone derivation, get_full_name, get_contact_list with cache in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call Contact Python controller methods (add_email, add_phone, get_full_name, get_contact_list) in-process; Python app-level logic ferro does not reimplement."
+  },
+  {
+    "file": "frappe/contacts/doctype/gender/test_gender.py",
+    "class": "TestGender",
+    "broad_area": "DocType-feature",
+    "sub_area": "gender doctype (empty stub)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class (pass); no test methods or HTTP calls. Nothing to evaluate."
+  },
+  {
+    "file": "frappe/contacts/doctype/salutation/test_salutation.py",
+    "class": "TestSalutation",
+    "broad_area": "DocType-feature",
+    "sub_area": "salutation doctype (empty stub)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class (pass); no test methods or HTTP calls. Nothing to evaluate."
+  },
+  {
+    "file": "frappe/contacts/report/addresses_and_contacts/test_addresses_and_contacts.py",
+    "class": "TestAddressesAndContacts",
+    "broad_area": "Reports-Print",
+    "sub_area": "addresses_and_contacts report: get_data query via Python in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call report's Python get_data function in-process; report rendering is a Python subsystem ferro does not implement."
+  },
+  {
+    "file": "frappe/custom/doctype/client_script/test_client_script.py",
+    "class": "TestClientScript",
+    "broad_area": "DocType-feature",
+    "sub_area": "client script doctype (empty stub)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class (pass); client scripts are browser-side JavaScript customization not related to ferro's server runtime."
+  },
+  {
+    "file": "frappe/custom/doctype/custom_field/test_custom_field.py",
+    "class": "TestCustomField",
+    "broad_area": "Meta-Schema",
+    "sub_area": "custom field create/sort/rename/delete - modifies DocType meta in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests create/rename/delete Custom Fields via frappe Python helpers in-process; custom field management alters schema and meta and is a Python-side operation. Ferro reads meta from the baked DB but does not implement custom field management APIs."
+  },
+  {
+    "file": "frappe/custom/doctype/customize_form/test_customize_form.py",
+    "class": "TestCustomizeForm",
+    "broad_area": "Meta-Schema",
+    "sub_area": "customize form fetch/save field properties, custom links, labels, autoincrement - in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests exercise the Customize Form Python document (fetch_to_customize, save customization) in-process; DocType customization tooling is not implemented by ferro."
+  },
+  {
+    "file": "frappe/custom/doctype/property_setter/test_property_setter.py",
+    "class": "TestPropertySetter",
+    "broad_area": "Meta-Schema",
+    "sub_area": "bulk delete property setters in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call make_property_setter and bulk delete in-process; property setters are schema-customization machinery not implemented by ferro."
+  },
+  {
+    "file": "frappe/custom/report/audit_system_hooks/test_audit_system_hooks.py",
+    "class": "TestAuditSystemHooksReport",
+    "broad_area": "Reports-Print",
+    "sub_area": "audit system hooks report execute() in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call the Python report execute() function in-process; report execution is a Python subsystem not in ferro's scope."
+  },
+  {
+    "file": "frappe/geo/doctype/country/test_country.py",
+    "class": "TestCountry",
+    "broad_area": "DocType-feature",
+    "sub_area": "bulk insert of Country/Currency fixtures via db_insert in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests reimport country/currency fixtures and compare DB snapshots via in-process frappe.db; geo fixture management is not part of ferro's HTTP API scope."
+  },
+  {
+    "file": "frappe/geo/doctype/currency/test_currency.py",
+    "class": "TestUser",
+    "broad_area": "DocType-feature",
+    "sub_area": "default currency (USD) setup verification via in-process frappe.get_doc",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests get_doc('Currency','USD') and assertDocumentEqual in-process; a trivial seed-data check not exercising ferro's HTTP runtime."
+  },
+  {
+    "file": "frappe/gettext/extractors/tests/test_javascript.py",
+    "class": "TestJavaScript",
+    "broad_area": "Dev-tooling",
+    "sub_area": "JavaScript i18n string extractor (gettext/babel) for translation POT generation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call extract_javascript() in-process; a build-time i18n extraction tool with no relation to ferro's HTTP runtime."
+  },
+  {
+    "file": "frappe/gettext/test_translate.py",
+    "class": "TestTranslate",
+    "broad_area": "Dev-tooling",
+    "sub_area": "gettext POT/PO/MO catalog generation and gitignore filtering for translation pipeline",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests generate translation catalogs via Python gettext utilities in-process; build-time translation tooling entirely outside ferro's scope."
+  },
+  {
+    "file": "frappe/search/test_full_text_search.py",
+    "class": "TestFullTextSearch",
+    "broad_area": "Web-Website",
+    "sub_area": "full-text search index build, search, update, remove - in-process Python",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests exercise the FullTextSearch Python class in-process with in-memory documents; ferro does not implement Frappe's full-text search indexer."
+  },
+  {
+    "file": "frappe/utils/telemetry/pulse/test_pulse_client.py",
+    "class": "TestEventQueue",
+    "broad_area": "Framework-internal",
+    "sub_area": "telemetry pulse event queue add/collect/FIFO operations via Redis cache in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests exercise the in-process EventQueue Redis-backed telemetry queue; telemetry is an internal Python subsystem not implemented by ferro."
+  },
+  {
+    "file": "frappe/utils/telemetry/pulse/test_pulse_client.py",
+    "class": "TestRateLimiting",
+    "broad_area": "Framework-internal",
+    "sub_area": "telemetry pulse event rate limiting logic in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests exercise rate-limiting logic of the pulse telemetry client in-process; not related to ferro's HTTP or auth surface."
+  },
+  {
+    "file": "frappe/utils/telemetry/pulse/test_pulse_client.py",
+    "class": "TestBatchProcessing",
+    "broad_area": "Framework-internal",
+    "sub_area": "telemetry pulse batch send with retry/failure handling in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests exercise batch processing and retry of telemetry events in-process; telemetry batch dispatch is a Python background concern outside ferro's scope."
+  },
+  {
+    "file": "frappe/utils/telemetry/pulse/test_pulse_client.py",
+    "class": "TestCapture",
+    "broad_area": "Framework-internal",
+    "sub_area": "telemetry capture (enabled/disabled, anonymization) in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests capture() telemetry function in-process with mocks; pure Python telemetry logic not in ferro's scope."
+  },
+  {
+    "file": "frappe/utils/telemetry/pulse/test_pulse_client.py",
+    "class": "TestUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "telemetry utils: parse_interval and anonymize_user in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests pure Python utility functions (parse_interval, anonymize_user) in-process; internal tooling with no ferro relevance."
+  },
+  {
+    "file": "frappe/utils/telemetry/pulse/test_pulse_client.py",
+    "class": "TestEventQueueDecoding",
+    "broad_area": "Framework-internal",
+    "sub_area": "telemetry event queue JSON decode/invalid-JSON handling in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests JSON decoding of queued telemetry events in-process; internal Python data handling not related to ferro."
+  },
+  {
+    "file": "frappe/utils/telemetry/pulse/test_pulse_client.py",
+    "class": "TestEventKey",
+    "broad_area": "Framework-internal",
+    "sub_area": "telemetry event key generation and uniqueness in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests telemetry event key generation in-process; pure Python internal utility not relevant to ferro."
+  },
+  {
+    "file": "frappe/utils/test_print_format_generator.py",
+    "class": "TestPrintFormatGenerator",
+    "broad_area": "Reports-Print",
+    "sub_area": "print format generator: HTML generation, Jinja template rendering, PDF generator selection in-process",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests exercise Python print format HTML generation and Jinja template rendering in-process; print/PDF is a Python subsystem ferro does not implement."
+  },
+  {
+    "file": "frappe/workflow/doctype/workflow/test_workflow.py",
+    "class": "TestWorkflow",
+    "broad_area": "Workflow",
+    "sub_area": "workflow transitions, conditions, approve/reject, actions, dynamic update values via in-process Python",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call apply_workflow and workflow Python model functions in-process; the workflow engine is a Python subsystem ferro does not reimplement."
+  },
+  {
+    "file": "frappe/workflow/doctype/workflow_action/test_workflow_action.py",
+    "class": "TestWorkflowAction",
+    "broad_area": "Workflow",
+    "sub_area": "workflow action doctype (empty stub)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class (pass); no test methods. Workflow actions are Python-only and out of ferro's scope."
+  },
+  {
+    "file": "frappe/workflow/doctype/workflow_state/test_workflow_state.py",
+    "class": "workflow_state (no test class)",
+    "broad_area": "Workflow",
+    "sub_area": "workflow state doctype (file with only import, no class)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "File contains only 'import frappe' with no test class; nothing to evaluate."
+  },
+  {
+    "file": "frappe/workflow/doctype/workflow_transition_task/test_workflow_transition_task.py",
+    "class": "IntegrationTestWorkflowTransitionTask",
+    "broad_area": "Workflow",
+    "sub_area": "workflow transition task doctype (empty stub)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class (pass); workflow transition tasks are Python-side automation not implemented by ferro."
+  },
+  {
+    "file": "frappe/workflow/doctype/workflow_transition_tasks/test_workflow_transition_tasks.py",
+    "class": "IntegrationTestWorkflowTransitionTasks",
+    "broad_area": "Workflow",
+    "sub_area": "workflow transition tasks doctype (empty stub)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class (pass); workflow transition tasks (plural) are Python-side automation not implemented by ferro."
+  }
+]

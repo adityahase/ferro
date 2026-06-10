@@ -1,0 +1,192 @@
+[
+  {
+    "file": "frappe/core/doctype/access_log/test_access_log.py",
+    "class": "TestAccessLog",
+    "broad_area": "Framework-internal",
+    "sub_area": "Access log creation on export, file download, and method calls",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Python AccessLog doctype's make_access_log helper and CSV export logging, all invoked directly via frappe in-process. Ferro does not implement access logging as a subsystem; this is a Python app-layer audit trail."
+  },
+  {
+    "file": "frappe/core/doctype/activity_log/test_activity_log.py",
+    "class": "TestActivityLog",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Login/logout activity logging and brute-force lockout policy",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's LoginManager session auth path (CookieManager, brute-force lockout, consecutive login attempt limits), all in-process Python. Ferro has no session auth and intentionally does not implement login policy enforcement."
+  },
+  {
+    "file": "frappe/core/doctype/api_request_log/test_api_request_log.py",
+    "class": "IntegrationTestAPIRequestLog",
+    "broad_area": "Framework-internal",
+    "sub_area": "API request log doctype placeholder (no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; merely a doctype stub. Ferro does not implement API request logging as a feature."
+  },
+  {
+    "file": "frappe/core/doctype/audit_trail/test_audit_trail.py",
+    "class": "TestAuditTrail",
+    "broad_area": "Framework-internal",
+    "sub_area": "Document version comparison (changed fields and child table rows) across amendments",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the AuditTrail/doc-comparator Python subsystem that diffs amendment chains via frappe.copy_doc and comparator.compare_document(), entirely in-process. This is a Python document-lifecycle feature ferro does not reimplement."
+  },
+  {
+    "file": "frappe/core/doctype/background_task/test_background_task.py",
+    "class": "IntegrationTestBackgroundTask",
+    "broad_area": "Background-jobs",
+    "sub_area": "Background Task doctype lifecycle: enqueue, execute, callbacks, retry, stop",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Python task_queue helpers (_execute_task, enqueue_task, retry_task, stop_task) and BackgroundTask DocType lifecycle entirely in-process with mocked RQ. Ferro's jobs.rs is an in-process replacement, but this Python-level API is not what ferro exposes."
+  },
+  {
+    "file": "frappe/core/doctype/comment/test_comment.py",
+    "class": "TestComment",
+    "broad_area": "DocType-feature",
+    "sub_area": "Comment creation, _comments cache update, public comment spam/XSS filtering",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Comment doctype's Python controller logic (add_comment, XSS filtering, blog comment moderation) entirely in-process. Ferro does not reimplement comment subsystem logic."
+  },
+  {
+    "file": "frappe/core/doctype/communication/test_communication.py",
+    "class": "TestCommunication",
+    "broad_area": "Email",
+    "sub_area": "Communication doctype: email parsing, naming, circular links, timeline dedup",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Communication doctype's Python controller (email parsing, deduplication, linked contacts, get_communication_data) and email sending mechanics; all in-process. Email and communication subsystems are outside ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/communication/test_communication.py",
+    "class": "TestCommunicationEmailMixin",
+    "broad_area": "Email",
+    "sub_area": "Communication email mixin: recipients, CC, BCC, sendmail, attachments, undo send",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Communication email mixin methods (make, add_attachments, undo_email_send) and EmailQueue interactions entirely in Python. These are email-subsystem internals ferro intentionally does not implement."
+  },
+  {
+    "file": "frappe/core/doctype/custom_docperm/test_custom_docperm.py",
+    "class": "TestCustomDocPerm",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Custom DocPerm doctype placeholder (no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods. Custom DocPerm affects ferro's permission lookup (auth.rs uses tabCustomDocPerm), but there are no assertions to classify here."
+  },
+  {
+    "file": "frappe/core/doctype/custom_role/test_custom_role.py",
+    "class": "TestCustomRole",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Custom Role doctype placeholder (no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods. No assertions to evaluate."
+  },
+  {
+    "file": "frappe/core/doctype/data_export/test_data_exporter.py",
+    "class": "TestDataExporter",
+    "broad_area": "Dev-tooling",
+    "sub_area": "DataExporter: CSV and Excel export from custom doctype with child tables",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the DataExporter Python class that builds CSV/XLSX responses in-process. Data export is a dev/admin tooling feature not reimplemented by ferro."
+  },
+  {
+    "file": "frappe/core/doctype/data_import/test_data_import.py",
+    "class": "TestDataImport",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Data Import: CSV source detection logic and column mapping warnings (unit)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Unit tests for is_csv_import_source helper and Column mapping warnings — pure Python logic with no HTTP or DB involvement. Data import is a Python dev-tooling subsystem outside ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/data_import/test_exporter.py",
+    "class": "TestExporter",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Exporter: CSV array generation and CSV response building from custom doctype",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the data_import Exporter Python class (get_csv_array, build_response) entirely in-process. CSV export tooling is not part of ferro's REST data plane."
+  },
+  {
+    "file": "frappe/core/doctype/data_import/test_importer.py",
+    "class": "TestImporter",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Importer: full CSV/XLSX data import into custom doctypes including child tables, skip rows, preview, update mode",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Python Importer class end-to-end (start_import, get_preview_from_template, import_data) against real DB using in-process frappe. Data import is a Python batch tool ferro does not implement."
+  },
+  {
+    "file": "frappe/core/doctype/data_import_log/test_data_import_log.py",
+    "class": "TestDataImportLog",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Data Import Log doctype placeholder (no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods."
+  },
+  {
+    "file": "frappe/core/doctype/data_import_skipped_row/test_data_import_skipped_row.py",
+    "class": "TestDataImportSkippedRow",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Data Import Skipped Row doctype placeholder (no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods."
+  },
+  {
+    "file": "frappe/core/doctype/data_import_value_mapping/test_data_import_value_mapping.py",
+    "class": "TestDataImportValueMapping",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Data Import Value Mapping doctype placeholder (no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods."
+  },
+  {
+    "file": "frappe/core/doctype/deleted_document/test_deleted_document.py",
+    "class": "TestDeletedDocument",
+    "broad_area": "DocType-feature",
+    "sub_area": "Deleted Document: metadata (owner, creation, modified) retention on restore",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Deleted Document restore path (frappe.delete_doc + restore()) and verifies metadata fields are preserved; all in-process Python ORM. Ferro does not implement the deleted-document/restore subsystem."
+  },
+  {
+    "file": "frappe/core/doctype/docshare/test_docshare.py",
+    "class": "TestDocShare",
+    "broad_area": "Auth-Perm",
+    "sub_area": "DocShare: per-document sharing grants (add, set_permission, remove), cascading read/write/share perms, sharing disabled setting",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests frappe.share.* permission grants and has_permission checks in-process; not exercised over HTTP. However, ferro's orm.rs permission gate must respect tabDocShare rows when deciding list/read access, so the behavioral assertions about shared-doc visibility are relevant to ferro's correctness even though the tests don't hit ferro directly."
+  }
+]

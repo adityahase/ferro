@@ -1,0 +1,302 @@
+[
+  {
+    "file": "frappe/desk/doctype/bulk_update/test_bulk_update.py",
+    "class": "TestBulkUpdate",
+    "broad_area": "DocType-feature",
+    "sub_area": "bulk submit/cancel/update docs in foreground and background; bulk update with conditions",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Calls Python bulk_update methods directly (submit_cancel_or_update_docs) and uses background jobs via enqueue; ferro does not implement the bulk_update whitelisted Python handler or background job dispatch. This is an app-layer Python subsystem, not a REST/ORM contract ferro reimplements."
+  },
+  {
+    "file": "frappe/desk/doctype/changelog_feed/test_changelog_feed.py",
+    "class": "TestChangelogFeed",
+    "broad_area": "DocType-feature",
+    "sub_area": "changelog feed doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; no behavior to exercise or validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/console_log/test_console_log.py",
+    "class": "TestConsoleLog",
+    "broad_area": "DocType-feature",
+    "sub_area": "console log doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/custom_html_block/test_custom_html_block.py",
+    "class": "TestCustomHTMLBlock",
+    "broad_area": "DocType-feature",
+    "sub_area": "custom HTML block doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/dashboard/test_dashboard.py",
+    "class": "TestDashboard",
+    "broad_area": "Auth-Perm",
+    "sub_area": "permission query for Dashboard doctype across users and module-blocked users",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests that frappe.get_list('Dashboard') respects permission and module-blocking logic in-process; ferro's orm.rs implements permission-gated get_list over HTTP and would need to honour the same rules, but module-blocking (block_modules) is a Desk-specific filter not currently in ferro's ORM layer."
+  },
+  {
+    "file": "frappe/desk/doctype/dashboard_chart/test_dashboard_chart.py",
+    "class": "TestDashboardChart",
+    "broad_area": "Reports-Print",
+    "sub_area": "dashboard chart data generation (count/sum/average/group-by over date periods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Calls Python dashboard_chart.get() directly to test timeseries aggregation and period bucketing logic; ferro does not implement the dashboard_chart subsystem and has no obligation to match this Python analytics code."
+  },
+  {
+    "file": "frappe/desk/doctype/dashboard_chart_source/test_dashboard_chart_source.py",
+    "class": "TestDashboardChartSource",
+    "broad_area": "Reports-Print",
+    "sub_area": "dashboard chart source doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/desktop_icon/test_desktop_icon.py",
+    "class": "IntegrationTestDesktopIcon",
+    "broad_area": "DocType-feature",
+    "sub_area": "desktop icon doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/desktop_layout/test_desktop_layout.py",
+    "class": "IntegrationTestDesktopLayout",
+    "broad_area": "DocType-feature",
+    "sub_area": "desktop layout doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/desktop_settings/test_desktop_settings.py",
+    "class": "IntegrationTestDesktopSettings",
+    "broad_area": "DocType-feature",
+    "sub_area": "desktop settings doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/event/test_event.py",
+    "class": "TestEvent",
+    "broad_area": "Auth-Perm",
+    "sub_area": "event permission (public/private/shared), list filtering by user, recurring event date logic",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests if_owner and docshare-based read permissions through frappe.has_permission and frappe.get_list in-process; ferro's orm.rs implements if_owner permission gating and list filtering, which must reflect the same ORM contract, but the recurring event get_events() helper is pure Python logic outside ferro's scope."
+  },
+  {
+    "file": "frappe/desk/doctype/form_tour/test_form_tour.py",
+    "class": "TestFormTour",
+    "broad_area": "DocType-feature",
+    "sub_area": "form tour doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/kanban_board/test_kanban_board.py",
+    "class": "TestKanbanBoard",
+    "broad_area": "DocType-feature",
+    "sub_area": "kanban board doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/list_view_settings/test_list_view_settings.py",
+    "class": "TestListViewSettings",
+    "broad_area": "DocType-feature",
+    "sub_area": "list view settings doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/module_onboarding/test_module_onboarding.py",
+    "class": "TestModuleOnboarding",
+    "broad_area": "DocType-feature",
+    "sub_area": "module onboarding doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/note/test_note.py",
+    "class": "TestNote",
+    "broad_area": "ORM-write",
+    "sub_area": "document Version tracking on save (field changes, child table add/change/remove)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's Version doctype auto-generation on doc.save() — an in-process Python model hook; ferro does not implement the Versioning subsystem and this behavior is not part of ferro's REST/ORM contract."
+  },
+  {
+    "file": "frappe/desk/doctype/notification_log/test_notification_log.py",
+    "class": "TestNotificationLog",
+    "broad_area": "Email",
+    "sub_area": "notification log creation on assignment and share events",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests that assign_task and frappe.share.add trigger Notification Log creation and email queue entries; these are Python-side event hooks ferro intentionally does not implement."
+  },
+  {
+    "file": "frappe/desk/doctype/notification_settings/test_notification_settings.py",
+    "class": "TestNotificationSettings",
+    "broad_area": "DocType-feature",
+    "sub_area": "notification settings doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/number_card/test_number_card.py",
+    "class": "TestNumberCard",
+    "broad_area": "Auth-Perm",
+    "sub_area": "number card visibility gated by report permission and module blocking",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests frappe.has_permission and get_list for Number Card with role-restricted reports and module blocking; this is Desk-specific Python permission logic for a reporting artifact not implemented in ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/onboarding_permission/test_onboarding_permission.py",
+    "class": "TestOnboardingPermission",
+    "broad_area": "DocType-feature",
+    "sub_area": "onboarding permission doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/onboarding_step/test_onboarding_step.py",
+    "class": "TestOnboardingStep",
+    "broad_area": "DocType-feature",
+    "sub_area": "onboarding step doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/sidebar_item_group/test_sidebar_item_group.py",
+    "class": "IntegrationTestSidebarItemGroup",
+    "broad_area": "DocType-feature",
+    "sub_area": "sidebar item group doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/system_console/test_system_console.py",
+    "class": "TestSystemConsole",
+    "broad_area": "Dev-tooling",
+    "sub_area": "system console Python/SQL execution via safe_exec",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the System Console doctype's run() method which executes arbitrary Python/SQL via safe_exec; ferro does not implement this developer tool and has no obligation to match it."
+  },
+  {
+    "file": "frappe/desk/doctype/system_health_report/test_system_health_report.py",
+    "class": "TestSystemHealthReport",
+    "broad_area": "DocType-feature",
+    "sub_area": "system health report form load via getdoc",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Calls getdoc() directly in-process on a singleton report doctype; the system health report is a Python-backed introspection tool reporting on workers/queues/redis, none of which ferro provides."
+  },
+  {
+    "file": "frappe/desk/doctype/tag/test_tag.py",
+    "class": "TestTag",
+    "broad_area": "DocType-feature",
+    "sub_area": "tag add and get_stats (_user_tags aggregation in reportview)",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests add_tag() and get_stats() for _user_tags aggregation which maps to frappe.desk.reportview.get_stats — a method ferro's desk.rs partially implements; ferro would need to support tag-based stats queries to pass this, but the current implementation may not handle the _user_tags special column."
+  },
+  {
+    "file": "frappe/desk/doctype/tag_link/test_tag_link.py",
+    "class": "TestTagLink",
+    "broad_area": "DocType-feature",
+    "sub_area": "tag link doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/doctype/todo/test_todo.py",
+    "class": "TestToDo",
+    "broad_area": "Auth-Perm",
+    "sub_area": "todo delete/fetch/fetch_if_empty/if_owner list access and doc read access per user role",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests if_owner permission semantics (owner and assigned_by gates), fetch_from fields, and role-based list filtering through DatabaseQuery — all behaviors ferro's orm.rs must replicate for the REST/ORM contract; fetch_from and Version side-effects are Python-only concerns, but the permission logic (if_owner, role-based read/write) is directly encoded in ferro's auth.rs and orm.rs."
+  },
+  {
+    "file": "frappe/desk/doctype/workspace/test_workspace.py",
+    "class": "TestWorkspace",
+    "broad_area": "DocType-feature",
+    "sub_area": "workspace name conflict validation and role-restricted workspace sidebar visibility",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests workspace insert validation (name conflict with DocType) and get_workspace_sidebar_items() role filtering — Python Desk-layer logic; ferro's desk.rs serves a frozen sidebar and does not re-implement the dynamic workspace sidebar role-filtering Python logic."
+  },
+  {
+    "file": "frappe/desk/doctype/workspace_sidebar/test_workspace_sidebar.py",
+    "class": "IntegrationTestWorkspaceSidebar",
+    "broad_area": "DocType-feature",
+    "sub_area": "workspace sidebar doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty test class with no test methods; nothing to validate against ferro."
+  },
+  {
+    "file": "frappe/desk/form/test_form.py",
+    "class": "TestForm",
+    "broad_area": "ORM-read",
+    "sub_area": "linked docs lookup, sort field fallback for null values, get_next navigation",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests get_linked_docs (which ferro's desk.rs exposes via frappe.desk.form.load methods), sort-field null-value fallback for list navigation, and get_next pagination — ferro implements form load and list navigation over HTTP, but these in-process calls test Python helpers that underpin those endpoints."
+  }
+]

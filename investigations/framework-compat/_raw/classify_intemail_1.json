@@ -1,0 +1,352 @@
+[
+  {
+    "file": "frappe/email/doctype/auto_email_report/test_auto_email_report.py",
+    "class": "TestAutoEmailReport",
+    "broad_area": "Email",
+    "sub_area": "Scheduled auto email report generation and PDF/HTML rendering",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the auto email report subsystem which generates and sends scheduled reports via email — entirely a Python/Frappe feature ferro does not implement. Pure in-process calls with no HTTP path ferro touches."
+  },
+  {
+    "file": "frappe/email/doctype/document_follow/test_document_follow.py",
+    "class": "TestDocumentFollow",
+    "broad_area": "Email",
+    "sub_area": "Document follow/unfollow on comment, like, assign, share events",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the document-follow notification system which tracks activity events and sends email digests — a Python-only subsystem not implemented by ferro. No HTTP calls are made to ferro."
+  },
+  {
+    "file": "frappe/email/doctype/email_account/test_email_account.py",
+    "class": "TestEmailAccount",
+    "broad_area": "Email",
+    "sub_area": "Email account incoming/outgoing processing, threading, IMAP handling",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests IMAP/SMTP email account processing including message threading and attachment handling — entirely an email subsystem outside ferro's scope. Calls Frappe Python classes directly."
+  },
+  {
+    "file": "frappe/email/doctype/email_account/test_email_account.py",
+    "class": "TestInboundMail",
+    "broad_area": "Email",
+    "sub_area": "Inbound mail parsing, parent communication threading, reference resolution",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the InboundMail Python class for email parsing and communication threading — pure Python email infrastructure that ferro intentionally does not implement."
+  },
+  {
+    "file": "frappe/email/doctype/email_domain/test_email_domain.py",
+    "class": "TestDomain",
+    "broad_area": "Email",
+    "sub_area": "Email domain on_update propagation to email accounts",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests email domain document hooks that propagate domain settings to related email accounts — Python DocType controller logic ferro does not implement."
+  },
+  {
+    "file": "frappe/email/doctype/email_flag_queue/test_email_flag_queue.py",
+    "class": "TestEmailFlagQueue",
+    "broad_area": "Email",
+    "sub_area": "Email flag queue (IMAP flag sync) operations",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the email flag queue used for syncing IMAP read/unread flags — a mail-server integration subsystem outside ferro's scope entirely."
+  },
+  {
+    "file": "frappe/email/doctype/email_group/test_email_group.py",
+    "class": "TestEmailGroup",
+    "broad_area": "Email",
+    "sub_area": "Email group welcome URL validation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests email group URL validation logic in Python — a mailing-list feature outside ferro's data plane."
+  },
+  {
+    "file": "frappe/email/doctype/email_group_member/test_email_group_member.py",
+    "class": "TestEmailGroupMember",
+    "broad_area": "Email",
+    "sub_area": "Email group member DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test file for the EmailGroupMember doctype — no assertions relevant to ferro's REST/ORM layer."
+  },
+  {
+    "file": "frappe/email/doctype/email_queue/test_email_queue.py",
+    "class": "TestEmailQueue",
+    "broad_area": "Email",
+    "sub_area": "Email queue deletion, retry logic, SMTP context reuse",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests email queue management and SMTP delivery mechanics — a background email-sending subsystem ferro does not implement."
+  },
+  {
+    "file": "frappe/email/doctype/email_rule/test_email_rule.py",
+    "class": "TestEmailRule",
+    "broad_area": "Email",
+    "sub_area": "Email rule (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test file for email routing rules — no test methods relevant to ferro."
+  },
+  {
+    "file": "frappe/email/doctype/email_template/test_email_template.py",
+    "class": "TestEmailTemplate",
+    "broad_area": "Email",
+    "sub_area": "Email template DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test file for the EmailTemplate doctype — no assertions relevant to ferro's scope."
+  },
+  {
+    "file": "frappe/email/doctype/email_unsubscribe/test_email_unsubscribe.py",
+    "class": "TestEmailUnsubscribe",
+    "broad_area": "Email",
+    "sub_area": "Email unsubscribe DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test file for the EmailUnsubscribe doctype — no assertions relevant to ferro's scope."
+  },
+  {
+    "file": "frappe/email/doctype/notification/test_notification.py",
+    "class": "TestNotification",
+    "broad_area": "Email",
+    "sub_area": "Notification engine: conditions, value-change triggers, Jinja templates, attachments",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's notification/alert system (email/Slack/system) triggered on DocType events — a Python-only workflow-adjacent subsystem not implemented in ferro."
+  },
+  {
+    "file": "frappe/email/doctype/unhandled_email/test_unhandled_email.py",
+    "class": "TestUnhandledEmail",
+    "broad_area": "Email",
+    "sub_area": "Unhandled email DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test file for the UnhandledEmail doctype — no assertions relevant to ferro."
+  },
+  {
+    "file": "frappe/email/test_email_attachments.py",
+    "class": "TestEmailAttachments",
+    "broad_area": "Email",
+    "sub_area": "Email attachment percent-encoding in inbound mail processing",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests inbound email attachment handling in the InboundMail Python class — email parsing infrastructure outside ferro's scope."
+  },
+  {
+    "file": "frappe/email/test_email_body.py",
+    "class": "TestEmailBody",
+    "broad_area": "Email",
+    "sub_area": "Email body construction: encoding, inline images, headers, CID replacement",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the email_body module for MIME message construction — pure Python email formatting code not part of ferro's REST data plane."
+  },
+  {
+    "file": "frappe/email/test_smtp.py",
+    "class": "TestSMTP",
+    "broad_area": "Email",
+    "sub_area": "SMTP session creation (SSL/TLS) and email account lookup",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the SMTPServer Python class for connection setup — email delivery infrastructure ferro does not implement."
+  },
+  {
+    "file": "frappe/integrations/doctype/connected_app/test_connected_app.py",
+    "class": "TestConnectedApp",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "OAuth2 web application flow (authorization code grant)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the OAuth2 connected-app authorization code flow — a social/OAuth integration subsystem ferro intentionally does not implement."
+  },
+  {
+    "file": "frappe/integrations/doctype/geolocation_settings/test_geolocation_settings.py",
+    "class": "TestGeolocationSettings",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Geolocation settings DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test file for geolocation configuration — no assertions relevant to ferro."
+  },
+  {
+    "file": "frappe/integrations/doctype/google_contacts/test_google_contacts.py",
+    "class": "TestGoogleContacts",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Google Contacts integration (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for Google Contacts sync — a Google API integration outside ferro's scope."
+  },
+  {
+    "file": "frappe/integrations/doctype/google_settings/test_google_settings.py",
+    "class": "TestGoogleSettings",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Google file picker settings validation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Google API settings configuration (picker enabled/disabled) — a Google OAuth integration outside ferro's scope."
+  },
+  {
+    "file": "frappe/integrations/doctype/integration_request/test_integration_request.py",
+    "class": "TestIntegrationRequest",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Integration request DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for the IntegrationRequest doctype — no assertions relevant to ferro's REST or ORM layer."
+  },
+  {
+    "file": "frappe/integrations/doctype/ldap_settings/test_ldap_settings.py",
+    "class": "LDAP_TestCase",
+    "broad_area": "Auth-Perm",
+    "sub_area": "LDAP authentication: bind, user creation, role sync, attribute mapping",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests LDAP authentication using mocked LDAP3 server — an external directory auth provider ferro does not implement (ferro uses only token/Basic auth)."
+  },
+  {
+    "file": "frappe/integrations/doctype/ldap_settings/test_ldap_settings.py",
+    "class": "Test_OpenLDAP",
+    "broad_area": "Auth-Perm",
+    "sub_area": "OpenLDAP-specific authentication integration",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Concrete mixin application for OpenLDAP variant of LDAP auth — same rationale as LDAP_TestCase, outside ferro's auth scope."
+  },
+  {
+    "file": "frappe/integrations/doctype/ldap_settings/test_ldap_settings.py",
+    "class": "Test_ActiveDirectory",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Active Directory-specific authentication integration",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Concrete mixin application for Active Directory LDAP auth variant — same rationale as LDAP_TestCase, outside ferro's auth scope."
+  },
+  {
+    "file": "frappe/integrations/doctype/oauth_authorization_code/test_oauth_authorization_code.py",
+    "class": "TestOAuthAuthorizationCode",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "OAuth2 authorization code DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for the OAuthAuthorizationCode doctype — OAuth is not implemented by ferro."
+  },
+  {
+    "file": "frappe/integrations/doctype/oauth_bearer_token/test_oauth_bearer_token.py",
+    "class": "TestOAuthBearerToken",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "OAuth2 bearer token DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for the OAuthBearerToken doctype — OAuth bearer token issuance is outside ferro's scope."
+  },
+  {
+    "file": "frappe/integrations/doctype/oauth_client/test_oauth_client.py",
+    "class": "TestOAuthClient",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "OAuth2 client registration DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for the OAuthClient doctype — OAuth2 client management is not implemented by ferro."
+  },
+  {
+    "file": "frappe/integrations/doctype/oauth_settings/test_oauth_settings.py",
+    "class": "IntegrationTestOAuthSettings",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "OAuth2 settings configuration (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for OAuth settings — OAuth is a Python subsystem ferro intentionally does not implement."
+  },
+  {
+    "file": "frappe/integrations/doctype/push_notification_settings/test_push_notification_settings.py",
+    "class": "TestPushNotificationSettings",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Push notification settings (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for push notification settings — a web push integration outside ferro's scope."
+  },
+  {
+    "file": "frappe/integrations/doctype/slack_webhook_url/test_slack_webhook_url.py",
+    "class": "TestSlackWebhookURL",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Slack webhook URL DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for Slack webhook integration — a third-party notification integration outside ferro's scope."
+  },
+  {
+    "file": "frappe/integrations/doctype/social_login_key/test_social_login_key.py",
+    "class": "TestSocialLoginKey",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Social login (GitHub OAuth2): provider registration, signup flow, disable-signup enforcement",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests social OAuth2 login (GitHub) including login_via_oauth2 and CookieManager/LoginManager — social login is not implemented by ferro and requires session auth ferro explicitly omits."
+  },
+  {
+    "file": "frappe/integrations/doctype/token_cache/test_token_cache.py",
+    "class": "TestTokenCache",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "OAuth token cache: auth header, data update, expiry logic",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the OAuth token cache Python class used by connected-app OAuth flows — an OAuth integration subsystem ferro does not implement."
+  },
+  {
+    "file": "frappe/integrations/doctype/webhook/test_webhook.py",
+    "class": "TestWebhook",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Webhook triggers, request body validation, dynamic URL, request log creation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the webhook system that fires HTTP callbacks on DocType events — a background/event-driven integration subsystem ferro does not implement."
+  },
+  {
+    "file": "frappe/integrations/doctype/webhook_request_log/test_webhook_request_log.py",
+    "class": "TestWebhookRequestLog",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "Webhook request log DocType (placeholder/empty test)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty or near-empty test for the WebhookRequestLog doctype — webhook logging is outside ferro's scope."
+  }
+]

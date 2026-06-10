@@ -1,0 +1,442 @@
+[
+  {
+    "file": "frappe/tests/test_sequence.py",
+    "class": "TestSequence",
+    "broad_area": "DB-layer",
+    "sub_area": "DB sequence generator (create_sequence, get_next_sequence_val, set_next_sequence_val)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's DB sequence API (tabSeries-backed autoname helper), invoked entirely in-process via frappe.db; ferro uses its own naming.rs for naming_series and does not expose or replicate the sequence generator API."
+  },
+  {
+    "file": "frappe/tests/test_sitemap.py",
+    "class": "TestSitemap",
+    "broad_area": "Web-Website",
+    "sub_area": "Website sitemap.xml generation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Frappe website renderer's sitemap.xml output via get_html_for_route in-process; ferro does not implement the website/portal renderer subsystem at all."
+  },
+  {
+    "file": "frappe/tests/test_sqlite_search.py",
+    "class": "TestSQLiteSearch",
+    "broad_area": "Framework-internal",
+    "sub_area": "SQLiteSearch base class implementation (test helper subclass only)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "This is a test-only subclass of SQLiteSearch used as a fixture; it contains no test methods itself and exercises no HTTP path or ferro-relevant behavior."
+  },
+  {
+    "file": "frappe/tests/test_sqlite_search.py",
+    "class": "TestSQLiteSearchAPI",
+    "broad_area": "Framework-internal",
+    "sub_area": "Full-text SQLite search index lifecycle, search, permissions, background indexing",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's SQLiteSearch full-text search subsystem (index build, querying, scoring, deduplication) entirely in-process; ferro does not implement a full-text search index and this is a Python-only subsystem."
+  },
+  {
+    "file": "frappe/tests/test_test_utils.py",
+    "class": "TestTestUtils",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Test harness utilities (document assertions, thread-locals cleanup, setting changes, time freezing, missing-doctype generators)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests internal Frappe test-framework helpers (IntegrationTestCase utilities, generators) with no HTTP involvement; these are purely dev-tooling and have no bearing on ferro's correctness."
+  },
+  {
+    "file": "frappe/tests/test_trace.py",
+    "class": "TestTrace",
+    "broad_area": "Framework-internal",
+    "sub_area": "TracedDocument/traced_field descriptor validation in test mode",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python-only descriptor machinery (TracedDocument, traced_field) for field-value validation during tests; this is a Frappe Python-internal feature with no HTTP surface and no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_trace.py",
+    "class": "TestTracedFieldContext",
+    "broad_area": "Framework-internal",
+    "sub_area": "TracedField context manager with forbidden values and custom validation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the UnitTestCase.trace_fields() context manager for field-level validation assertions; entirely in-process Python test tooling with no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_translate.py",
+    "class": "TestTranslate",
+    "broad_area": "Framework-internal",
+    "sub_area": "Translation/i18n: cache, extraction, language variants, lazy translations, request language resolution",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's Python-side translation subsystem (cache, file extraction, language resolution from cookies/headers, JS extractor); ferro does not implement i18n and serves raw field values from SQLite without translation."
+  },
+  {
+    "file": "frappe/tests/test_twofactor.py",
+    "class": "TestTwoFactor",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Two-factor authentication (TOTP, OTP token confirm, 2FA policy, IP restriction)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's two-factor auth subsystem (pyotp, session-based OTP cache, 2FA flags) entirely in-process via frappe.twofactor; ferro's auth.rs supports only token/Basic auth and deliberately excludes 2FA."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestFilters",
+    "broad_area": "ORM-read",
+    "sub_area": "Filter expression evaluation (safe_filters parsing, dict/list/operator forms)",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests Frappe's filter parsing logic used by get_list; ferro's orm.rs must handle the same filter operators (=, !=, >, <, in, not in, is, between, timespan) — the behavior is partially encoded here even though tests run in-process."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestMoney",
+    "broad_area": "Framework-internal",
+    "sub_area": "money_in_words() formatting utility",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests pure Python number-to-words formatting utility; no HTTP surface and no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestDataManipulation",
+    "broad_area": "Framework-internal",
+    "sub_area": "scrub_urls() relative URL expansion in HTML",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests HTML URL rewriting utility; pure Python helper with no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestFieldCasting",
+    "broad_area": "Framework-internal",
+    "sub_area": "Type-cast utilities (cstr, cint, cfloat, cdate, cdatetime, ctime)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python utility casting functions; these are internal helpers not exposed over HTTP and not reimplemented in ferro."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestMathUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "floor/ceil math utilities",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests pure Python math helper functions; no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestHTMLUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "HTML sanitization utilities (clean_email_html, sanitize_html)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests HTML sanitization Python utilities; no HTTP surface and no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestValidationUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "Validation utilities (URL, email, phone, name, IBAN)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python validation helper functions; not exposed over HTTP by ferro."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestImage",
+    "broad_area": "Framework-internal",
+    "sub_area": "Image EXIF stripping and optimization utilities",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests image processing Python utilities; no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestPythonExpressions",
+    "broad_area": "Framework-internal",
+    "sub_area": "Python expression validator for field conditions",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests validate_python_code() which validates JS-vs-Python expression syntax; purely internal Python utility, no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestDiffUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "Document version diff utilities (version_query, get_version_diff)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests version/diff utilities that depend on the Version doctype and Python-side diff logic; ferro does not implement versioning."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestDateUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "Date/time utility functions (get_first_day_of_week, get_timedelta, format_duration, etc.)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests a wide range of Python date/time helper functions; these are internal utilities not surfaced by ferro."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestResponse",
+    "broad_area": "Framework-internal",
+    "sub_area": "JSON response handler serialization (json_handler for dates, Decimal, Document, sets)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's JSON serialization handler for custom types; ferro has its own JSON serialization in Rust and does not use this Python handler."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestTimeDeltaUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "Timedelta formatting/parsing utilities",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python timedelta string formatting/parsing utilities; not relevant to ferro."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestXlsxUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "XLSX HTML unescaping utility",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Excel/XLSX HTML handling utility; no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestLinkTitle",
+    "broad_area": "Meta-Schema",
+    "sub_area": "Link title doctypes in boot_info and getdoc response",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests that doctypes with show_title_field_in_link are included in boot_info and that link title fields appear in getdoc; ferro's desk.rs handles getdoc but may not fully implement link_title_map boot metadata."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestAppParser",
+    "broad_area": "Dev-tooling",
+    "sub_area": "parse_app_name() for git/github URLs",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests bench CLI app-name parsing utility; dev tooling with no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestIntrospectionMagic",
+    "broad_area": "Framework-internal",
+    "sub_area": "get_newargs() function introspection utility",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python function argument introspection helper; purely internal utility with no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestMakeRandom",
+    "broad_area": "Framework-internal",
+    "sub_area": "make_random utilities (get_random, can_make, how_many)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests demo data generation utilities; no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestLazyLoader",
+    "broad_area": "Framework-internal",
+    "sub_area": "lazy_import() deferred module loading",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python lazy import mechanism; purely internal Python tooling."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestIdenticon",
+    "broad_area": "Framework-internal",
+    "sub_area": "Gravatar/identicon generation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests avatar/identicon image generation utilities; no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestContainerUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "dict_to_str and remove_blanks utilities",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests trivial dict utility functions; no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestLocks",
+    "broad_area": "Framework-internal",
+    "sub_area": "File-based distributed locking (filelock, global locks)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's file-lock synchronization utility; ferro handles concurrency via Rust's Tokio and does not use Python file locks."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestMiscUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "Miscellaneous utilities (get_file_timestamp, execute_in_shell, get_sites, get_site_info, get_url_to_form, safe_json_loads, expand_relative_urls)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests a mix of bench/site utility helpers; none of these are reimplemented by ferro or relevant to its REST surface."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestTypingValidations",
+    "broad_area": "Framework-internal",
+    "sub_area": "Type validation for whitelisted API functions (@validate_argument_types, force_types)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's Python-side argument type validation decorator for whitelisted methods; ferro does not implement Python-level type enforcement."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestTBSanitization",
+    "broad_area": "Framework-internal",
+    "sub_area": "Traceback sanitization (password masking in tracebacks)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python traceback sanitization to redact password values; purely Python internal tooling."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestRounding",
+    "broad_area": "Framework-internal",
+    "sub_area": "flt() rounding (Commercial vs Banker's rounding methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's floating-point rounding utilities; pure Python arithmetic helpers with no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestArgumentTypingValidations",
+    "broad_area": "Framework-internal",
+    "sub_area": "validate_argument_types decorator with AsyncMock/MagicMock DocType",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests type validation decorator applied to DocType methods in-process; no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestChangeLog",
+    "broad_area": "Framework-internal",
+    "sub_area": "parse_github_url utility for changelog links",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests GitHub URL parsing utility for changelog display; no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestCrypto",
+    "broad_area": "Auth-Perm",
+    "sub_area": "sha256_hash utility function",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "partial",
+    "rationale": "Tests a single SHA-256 hash helper; ferro has its own crypto.rs with SHA-256 but this tests the Python utility, not ferro's implementation."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestURLTrackers",
+    "broad_area": "Web-Website",
+    "sub_area": "UTM tracker URL building and parsing utilities",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests UTM tracking URL utilities (add_trackers_to_url, parse_and_map_trackers_from_url, map_trackers); website marketing tooling with no ferro relevance."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestDataUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "comma_and/comma_or list formatting with i18n",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests string joining utilities with locale-aware connectors; pure Python internal utility."
+  },
+  {
+    "file": "frappe/tests/test_utils.py",
+    "class": "TestMsgPrint",
+    "broad_area": "Framework-internal",
+    "sub_area": "msgprint XSS sanitization in message log",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.msgprint() script-tag stripping behavior; an in-process Python UI helper not relevant to ferro's REST responses."
+  },
+  {
+    "file": "frappe/tests/test_virtual_doctype.py",
+    "class": "TestVirtualDoctypes",
+    "broad_area": "DocType-feature",
+    "sub_area": "Virtual DocType CRUD (insert, update, get_list, get_count, delete via custom controller using JSON file backend)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's virtual DocType feature where a custom Python controller handles storage (JSON file); ferro only reads/writes real SQLite-backed tab* tables and does not support virtual doctype controllers."
+  },
+  {
+    "file": "frappe/tests/test_webform.py",
+    "class": "TestWebform",
+    "broad_area": "Web-Website",
+    "sub_area": "Web Form publish/unpublish and HTTP response code via website renderer",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Frappe website renderer serving Web Form pages (published=200, unpublished=404) using frappe.website.serve.get_response; ferro does not implement the website/portal/webform renderer."
+  },
+  {
+    "file": "frappe/tests/test_website.py",
+    "class": "TestWebsite",
+    "broad_area": "Web-Website",
+    "sub_area": "Website page renderer: home page, static pages, error pages, login, redirects, caching, metatags, breadcrumbs, hooks",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's website/portal renderer (get_response, StaticPage, home_page resolution, custom renderers) entirely in-process; ferro serves SPAs and Desk but does not implement the Frappe website renderer."
+  }
+]

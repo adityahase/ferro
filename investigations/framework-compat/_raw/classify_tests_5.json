@@ -1,0 +1,222 @@
+[
+  {
+    "file": "frappe/tests/test_oauth20.py",
+    "class": "FrappeRequestTestCase",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "OAuth2 base test case with sid cookie login helper",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Base class providing session/sid-based HTTP helpers for OAuth2 tests; ferro has no session auth and does not implement OAuth2 endpoints. OAuth is an intentionally absent subsystem."
+  },
+  {
+    "file": "frappe/tests/test_oauth20.py",
+    "class": "TestOAuth20",
+    "broad_area": "Integrations-OAuth-Social",
+    "sub_area": "OAuth2 authorization code, PKCE, token revoke, implicit, OpenID Connect flows",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the full OAuth2/OpenID Connect flow via Frappe's Python integration layer (oauth2.authorize, get_token, revoke_token, openid_profile); ferro does not implement any OAuth2 endpoints and this is an intentionally absent subsystem."
+  },
+  {
+    "file": "frappe/tests/test_password.py",
+    "class": "TestPassword",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Password hashing (pbkdf2), encrypted field storage, Fernet encrypt/decrypt, rename/delete propagation in __Auth",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Encodes the password storage contract (pbkdf2_sha256 hash in __Auth, Fernet-encrypted passwords) that ferro's crypto.rs and auth.rs must match; ferro implements pbkdf2 verification and Fernet decrypt but not the full encrypted-field lifecycle (rename, delete propagation) which is Python-only."
+  },
+  {
+    "file": "frappe/tests/test_password_strength.py",
+    "class": "TestPasswordStrength",
+    "broad_area": "Framework-internal",
+    "sub_area": "Password strength checker performance (zxcvbn timing bound)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Pure in-process test of frappe.utils.password_strength (zxcvbn wrapper); ferro does not implement a password strength checker and this is a Python utility concern entirely outside ferro's scope."
+  },
+  {
+    "file": "frappe/tests/test_patches.py",
+    "class": "TestPatches",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Patch module discovery, patch list integrity, Patch Log count vs patches.txt",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Frappe patch/migration system (patches.txt parsing, Patch Log records); ferro implements its own md5-gated schema migration but never exposes patch execution over HTTP. This is dev/install tooling ferro does not replicate."
+  },
+  {
+    "file": "frappe/tests/test_patches.py",
+    "class": "TestPatchReader",
+    "broad_area": "Dev-tooling",
+    "sub_area": "patches.txt parser: empty file, sections, old-style, edge cases, comment handling",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Unit tests for the patch.txt file parser (mock_open-based); purely internal Python tooling with no HTTP surface and no relevance to ferro's runtime."
+  },
+  {
+    "file": "frappe/tests/test_pdf.py",
+    "class": "TestPdf",
+    "broad_area": "Reports-Print",
+    "sub_area": "PDF generation: margin CSS parsing, encryption, private images, wkhtmltopdf/weasyprint integration",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's PDF generation pipeline (pdfgen, wkhtmltopdf/weasyprint) which ferro intentionally does not implement; PDF rendering is a Python-only subsystem."
+  },
+  {
+    "file": "frappe/tests/test_perf.py",
+    "class": "TestPerformance",
+    "broad_area": "Framework-internal",
+    "sub_area": "CPython-side performance: query count, meta caching, redis caching, memory, RPS via FrappeClient",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "MariaDB-only performance regression tests measuring CPython Frappe's internal caching and query counts; the RPS test uses FrappeClient with password/session auth which ferro does not support, and all assertions are benchmarks of CPython internals irrelevant to ferro."
+  },
+  {
+    "file": "frappe/tests/test_perf.py",
+    "class": "TestOverheadCalls",
+    "broad_area": "REST-API",
+    "sub_area": "HTTP overhead: Redis and SQL call counts for ping and list/get endpoints",
+    "exercises_ferro": "http",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Uses FrappeAPITestCase to count Redis and SQL calls per HTTP request (ping, resource list, get); ferro has no Redis and its SQL call count differs structurally, so exact overhead numbers don't apply, but ferro must respond correctly to these endpoints — also gated MariaDB-only so skipped on SQLite."
+  },
+  {
+    "file": "frappe/tests/test_permissions.py",
+    "class": "TestPermissions",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Role-based and user-permission-based read/write/create/delete access, if_owner, permlevel, set_only_once, strict user permissions",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Encodes the full Frappe permission model (role perms, user permissions, if_owner, perm levels, strict mode) that ferro's auth.rs and orm.rs partially implement; ferro handles role-based read/write gating but lacks user-permission filtering, if_owner enforcement, and permlevel masking — this test suite defines the contract ferro must approach."
+  },
+  {
+    "file": "frappe/tests/test_printview.py",
+    "class": "PrintViewTest",
+    "broad_area": "Reports-Print",
+    "sub_area": "Print view HTML rendering, permission check on cancelled docs",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.www.printview.get_html_and_style which is Jinja/HTML rendering in CPython; ferro does not implement print view rendering and this is an intentionally absent subsystem."
+  },
+  {
+    "file": "frappe/tests/test_project_meta.py",
+    "class": "TestProjectMeta",
+    "broad_area": "Dev-tooling",
+    "sub_area": "frappe/__init__.py LOC budget enforcement",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Purely a code-quality gate that counts lines in frappe/__init__.py; no runtime behavior is tested and no HTTP surface is involved — entirely irrelevant to ferro."
+  },
+  {
+    "file": "frappe/tests/test_query.py",
+    "class": "TestQuery",
+    "broad_area": "ORM-read",
+    "sub_area": "frappe.qb.get_query: SQL generation, field validation (SELECT/WHERE injection prevention), filters with linked doctypes, tree queries, perm-gated get_list",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests the query builder's SQL generation and filter validation which encode ORM filter semantics ferro must replicate in orm.rs; ferro uses its own filter parsing rather than frappe.qb but must produce equivalent safe queries — field injection prevention and perm-gated list results are behaviors ferro's REST list endpoint must match."
+  },
+  {
+    "file": "frappe/tests/test_query_builder.py",
+    "class": "TestCustomFunctionsMariaDB",
+    "broad_area": "DB-layer",
+    "sub_area": "MariaDB-specific SQL functions: GROUP_CONCAT, MATCH/AGAINST, ConstantColumn, TIMESTAMP, CombineDatetime",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "MariaDB-only tests of Frappe's Python query builder SQL function generation; ferro targets SQLite only and uses its own SQL generation — these MariaDB-specific function tests have no relevance to ferro."
+  },
+  {
+    "file": "frappe/tests/test_query_builder.py",
+    "class": "TestCustomFunctionsPostgres",
+    "broad_area": "DB-layer",
+    "sub_area": "PostgreSQL-specific SQL functions: STRING_AGG, TSVECTOR, timestamp arithmetic",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "PostgreSQL-only tests of Frappe's Python query builder; ferro targets SQLite and these Postgres-specific generated SQL forms are irrelevant to ferro's runtime."
+  },
+  {
+    "file": "frappe/tests/test_query_builder.py",
+    "class": "TestBuilderBase",
+    "broad_area": "DB-layer",
+    "sub_area": "Query builder: tab prefix, run() patcher, aggregate functions (max/min/avg/sum)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Abstract mixin testing Frappe's Python query builder internals (tab prefix, run patcher, aggregates); ferro has its own SQL layer and does not use frappe.qb — these are internal Python ORM builder tests with no HTTP surface."
+  },
+  {
+    "file": "frappe/tests/test_query_builder.py",
+    "class": "TestParameterization",
+    "broad_area": "DB-layer",
+    "sub_area": "Query builder parameterization: %(param)s substitution in WHERE/SET/CASE expressions",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's Python query builder's named-parameter injection prevention mechanism; ferro uses its own SQL parameter binding in Rust and does not use frappe.qb, making these tests irrelevant to ferro's runtime."
+  },
+  {
+    "file": "frappe/tests/test_query_builder.py",
+    "class": "TestBuilderMaria",
+    "broad_area": "DB-layer",
+    "sub_area": "MariaDB query builder: tab prefix in FROM clause, get_query_builder factory",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "MariaDB-specific query builder tests; ferro targets SQLite only and does not use frappe.qb, so these are irrelevant to ferro's runtime."
+  },
+  {
+    "file": "frappe/tests/test_query_builder.py",
+    "class": "TestBuilderPostgres",
+    "broad_area": "DB-layer",
+    "sub_area": "PostgreSQL query builder: tab prefix, schema replacement, field name aliasing",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "PostgreSQL-specific query builder tests; ferro targets SQLite only and does not use frappe.qb, so these are entirely irrelevant to ferro's runtime."
+  },
+  {
+    "file": "frappe/tests/test_query_builder.py",
+    "class": "TestMisc",
+    "broad_area": "DB-layer",
+    "sub_area": "Query builder misc: custom functions, schema-qualified functions, Table utility, UNION queries",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests miscellaneous Frappe Python query builder utilities (ParameterizedFunction, Table, UNION); ferro has its own SQL layer and these internal Python builder tests have no HTTP surface relevant to ferro."
+  },
+  {
+    "file": "frappe/tests/test_query_builder.py",
+    "class": "TestOperatorIn",
+    "broad_area": "DB-layer",
+    "sub_area": "IN operator handling: null/empty value coalescing, func_in SQL generation",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests how Frappe's query builder handles IN filters with null/empty values (IS NULL expansion); ferro's orm.rs must implement equivalent IN-filter null handling when processing REST API filter parameters, but the SQL generation mechanism differs."
+  },
+  {
+    "file": "frappe/tests/test_query_report.py",
+    "class": "TestQueryReport",
+    "broad_area": "Reports-Print",
+    "sub_area": "Query Report: xlsx export, CSV export, duplicate column names, script reports, email export, xlsx style builder",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's report execution and export pipeline (xlsx, csv, email) which ferro intentionally does not implement; reports and print/export are Python-only subsystems outside ferro's scope."
+  }
+]

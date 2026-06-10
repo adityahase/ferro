@@ -1,0 +1,323 @@
+[
+  {
+    "file": "frappe/core/doctype/doctype/test_doctype.py",
+    "class": "TestDocType",
+    "broad_area": "Meta-Schema",
+    "sub_area": "DocType definition validation, field rules, DDL sync, export/import, unique constraints, naming, custom field deletion",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "All tests operate via frappe.get_doc/insert/save/delete in-process to verify DocType schema validation logic, DDL generation and file export; ferro does not reimplement DocType metadata editing or migration tooling. ferro reads already-created meta from tabDocType but does not exercise any of the schema creation/validation paths tested here."
+  },
+  {
+    "file": "frappe/core/doctype/doctype_layout/test_doctype_layout.py",
+    "class": "TestDocTypeLayout",
+    "broad_area": "Meta-Schema",
+    "sub_area": "DocType Layout sync_fields, based_on validation, standard layout developer-mode gate",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests exercise the DocType Layout Python controller (sync_fields method, validate hooks) entirely in-process; ferro has no DocType Layout concept and does not serve any endpoint that manages layout definitions."
+  },
+  {
+    "file": "frappe/core/doctype/document_naming_rule/test_document_naming_rule.py",
+    "class": "TestDocumentNamingRule",
+    "broad_area": "Naming",
+    "sub_area": "Document Naming Rule — prefix+digits series and conditional naming rules applied on insert",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests verify that Document Naming Rules (condition-based rule selection, prefix+counter series) produce correct names at insert time; ferro's naming.rs implements autoname rules including naming_series but does not implement the Document Naming Rule doctype priority/condition lookup. These encode naming behaviors ferro must be aware of even though the tests call frappe in-process."
+  },
+  {
+    "file": "frappe/core/doctype/document_naming_rule_condition/test_document_naming_rule_condition.py",
+    "class": "TestDocumentNamingRuleCondition",
+    "broad_area": "Naming",
+    "sub_area": "Document Naming Rule Condition (stub/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is `pass` with no tests; nothing to evaluate for ferro compatibility."
+  },
+  {
+    "file": "frappe/core/doctype/document_naming_settings/test_document_naming_settings.py",
+    "class": "TestNamingSeries",
+    "broad_area": "Naming",
+    "sub_area": "NamingSeries preview, prefix counter update, amended-doc naming override",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "ferro_covers": "partial",
+    "rationale": "Tests the DocumentNamingSettings singleton that controls naming_series options, counter values, and amendment-naming policy; ferro's naming.rs uses the same tabSeries counter table but does not implement the settings UI or amendment override logic, so only basic counter behavior overlaps."
+  },
+  {
+    "file": "frappe/core/doctype/document_share_key/test_document_share_key.py",
+    "class": "TestDocumentShareKey",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Document Share Key (stub/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is `pass` with no tests; nothing to evaluate for ferro compatibility."
+  },
+  {
+    "file": "frappe/core/doctype/domain/test_domain.py",
+    "class": "TestDomain",
+    "broad_area": "Framework-internal",
+    "sub_area": "Domain doctype (stub/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is `pass`; no tests to evaluate."
+  },
+  {
+    "file": "frappe/core/doctype/error_log/test_error_log.py",
+    "class": "TestErrorLog",
+    "broad_area": "Framework-internal",
+    "sub_area": "Error Log creation via log_error, LDAP exception detection",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests verify frappe's in-process Error Log creation helper and LDAP exception classification utility; ferro does not implement error log persistence or LDAP exception handling."
+  },
+  {
+    "file": "frappe/core/doctype/error_log/test_error_log.py",
+    "class": "TestExceptionSourceGuessing",
+    "broad_area": "Framework-internal",
+    "sub_area": "guess_exception_source — maps traceback to app name",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Pure Python utility test for traceback-to-app heuristic; entirely in-process and irrelevant to ferro's HTTP/ORM scope."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestSimpleFile",
+    "broad_area": "DocType-feature",
+    "sub_area": "File doctype save and content retrieval",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests File doctype save/get_content in-process via frappe Python; ferro does not reimplement the File doctype controller or filesystem storage logic."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestFSRollbacks",
+    "broad_area": "DocType-feature",
+    "sub_area": "File doctype filesystem rollback on db.rollback()",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests that file-system writes are rolled back when the DB transaction rolls back; this is a Python-level frappe.db behavior and does not map to ferro."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestExtensionValidations",
+    "broad_area": "DocType-feature",
+    "sub_area": "File upload allowed_file_extensions System Settings enforcement",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests File controller validation against System Settings allowed extensions in-process; ferro does not implement file upload validation."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestBase64File",
+    "broad_area": "DocType-feature",
+    "sub_area": "File doctype base64-encoded content save",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests File controller base64 decode path in-process; file upload/decode is not part of ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestSameFileName",
+    "broad_area": "DocType-feature",
+    "sub_area": "File deduplication by filename, private file content retrieval",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests File controller logic for handling same-filename collisions and content retrieval; in-process only and not within ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestSameContent",
+    "broad_area": "DocType-feature",
+    "sub_area": "File deduplication by content hash, attachment limit enforcement",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests content-hash deduplication and max_attachments enforcement in the File controller; purely in-process Python logic not within ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestFile",
+    "broad_area": "DocType-feature",
+    "sub_area": "File folder tree, file move, URL validation, same-URL privacy sync",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests complex File doctype folder/copy/move/URL-validation behaviors via frappe Python API in-process; none of these paths are replicated in ferro."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestAttachment",
+    "broad_area": "DocType-feature",
+    "sub_area": "Attach fieldtype: file linked to parent doc on save",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests that saving a doc with an Attach field auto-links the File record; this is a Frappe Python controller hook not implemented by ferro."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestCopyAttachmentsFromAmendedFrom",
+    "broad_area": "DocType-feature",
+    "sub_area": "File copy on document amendment (attached_to_field and folder preservation)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests that amending a submittable doc copies its file attachments with correct metadata; amendment and file copy logic live in Frappe Python controllers not reimplemented by ferro."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestAttachmentsAccess",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Private/public file listing permission per user",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests frappe in-process permission checks on file listing (private vs public, attached vs standalone); ferro does not implement the File doctype permission layer tested here."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestFileUtils",
+    "broad_area": "DocType-feature",
+    "sub_area": "Image extraction from doc HTML, comment, communication; folder creation utility",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests file utility functions (extract_images_from_doc, add_comment, create_new_folder) in-process; these are Python framework helpers not part of ferro's REST/ORM plane."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestFileOptimization",
+    "broad_area": "DocType-feature",
+    "sub_area": "File image optimization (compress, revert on rollback)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests File.optimize_file() Python method and filesystem rollback behavior; file optimization is not part of ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestGuestFileAndAttachments",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Guest file upload and private attachment access control",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Guest-role file upload and downloadable() checks using frappe.set_user in-process; ferro does not implement the File doctype's guest upload or downloadable logic."
+  },
+  {
+    "file": "frappe/core/doctype/file/test_file.py",
+    "class": "TestPublicFileRestriction",
+    "broad_area": "Auth-Perm",
+    "sub_area": "only_allow_system_managers_to_upload_public_files setting enforcement",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests File controller permission check gated on a System Settings flag; purely in-process Python controller logic outside ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/installed_applications/test_installed_applications.py",
+    "class": "TestInstalledApplications",
+    "broad_area": "Framework-internal",
+    "sub_area": "update_installed_apps_order validation (app order integrity)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the installed_apps ordering utility which validates that frappe is first and all apps exist; this is a bench-management concern not part of ferro's HTTP runtime."
+  },
+  {
+    "file": "frappe/core/doctype/language/test_language.py",
+    "class": "TestLanguage",
+    "broad_area": "Framework-internal",
+    "sub_area": "Language doctype (stub/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is `pass`; no tests to evaluate."
+  },
+  {
+    "file": "frappe/core/doctype/log_setting_user/test_log_setting_user.py",
+    "class": "TestLogSettingUser",
+    "broad_area": "Framework-internal",
+    "sub_area": "Log Setting User doctype (stub/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is `pass`; no tests to evaluate."
+  },
+  {
+    "file": "frappe/core/doctype/log_settings/test_log_settings.py",
+    "class": "TestLogSettings",
+    "broad_area": "Framework-internal",
+    "sub_area": "Log cleanup job: deletes old Activity/Error/Email Queue logs; log type identification",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the scheduled log-cleanup Python function and log-type detection helper; these are background-job/framework-internal concerns not implemented by ferro."
+  },
+  {
+    "file": "frappe/core/doctype/module_def/test_module_def.py",
+    "class": "TestModuleDef",
+    "broad_area": "Framework-internal",
+    "sub_area": "Module Def doctype (stub/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is `pass`; no tests to evaluate."
+  },
+  {
+    "file": "frappe/core/doctype/module_profile/test_module_profile.py",
+    "class": "TestModuleProfile",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Module Profile block_modules propagation to linked users",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Module Profile controller that propagates blocked-module lists to linked Users; this is a Frappe admin UI feature not part of ferro's REST/auth scope."
+  },
+  {
+    "file": "frappe/core/doctype/navbar_item/test_navbar_item.py",
+    "class": "TestNavbarItem",
+    "broad_area": "Framework-internal",
+    "sub_area": "Navbar Item doctype (stub/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is `pass`; no tests to evaluate."
+  },
+  {
+    "file": "frappe/core/doctype/navbar_settings/test_navbar_settings.py",
+    "class": "TestNavbarSettings",
+    "broad_area": "Framework-internal",
+    "sub_area": "Navbar Settings doctype (stub/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Class body is `pass`; no tests to evaluate."
+  },
+  {
+    "file": "frappe/core/doctype/package/test_package.py",
+    "class": "TestPackage",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Package Release generation: creates filesystem package tree from DocTypes/scripts/web pages",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Package Release doctype which exports module definitions to disk as a distributable package; this is a developer tooling/export feature entirely outside ferro's HTTP runtime scope."
+  }
+]

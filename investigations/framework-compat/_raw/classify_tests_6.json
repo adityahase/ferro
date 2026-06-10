@@ -1,0 +1,162 @@
+[
+  {
+    "file": "frappe/tests/test_rate_limiter.py",
+    "class": "TestRateLimiter",
+    "broad_area": "Framework-internal",
+    "sub_area": "Rate-limiter middleware (Redis-backed, per-request counters, 429 responses)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Calls frappe.rate_limiter Python module directly, never over HTTP; ferro has no rate-limiter subsystem and relies on upstream infra (Caddy/nginx) for that concern."
+  },
+  {
+    "file": "frappe/tests/test_rating.py",
+    "class": "TestRating",
+    "broad_area": "DocType-feature",
+    "sub_area": "Rating field validation (clamping to [0,1])",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Python Rating field clamp logic inside frappe.new_doc/insert; ferro does not reimplement field-type coercion and this is pure in-process Python validation."
+  },
+  {
+    "file": "frappe/tests/test_recorder.py",
+    "class": "TestRecorder",
+    "broad_area": "Dev-tooling",
+    "sub_area": "SQL query recorder (record/dump/stop/get/delete, explain, duplicates)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "frappe.recorder is a Python dev-mode profiling tool that hooks into frappe.db; ferro does not implement this subsystem and it is never exercised over HTTP."
+  },
+  {
+    "file": "frappe/tests/test_recorder.py",
+    "class": "TestRecorderDeco",
+    "broad_area": "Dev-tooling",
+    "sub_area": "record_queries decorator",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the @frappe.recorder.record_queries decorator — pure Python dev-tooling, not part of ferro's scope."
+  },
+  {
+    "file": "frappe/tests/test_recorder.py",
+    "class": "TestQueryNormalization",
+    "broad_area": "Dev-tooling",
+    "sub_area": "SQL query normalization (literal → ? substitution)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the normalize_query() Python utility function used by the recorder; pure string-processing with no HTTP interaction and no ferro equivalent."
+  },
+  {
+    "file": "frappe/tests/test_redis.py",
+    "class": "TestRedisAuth",
+    "broad_area": "Framework-internal",
+    "sub_area": "Redis ACL user management for RQ queue isolation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Redis ACL provisioning for RQ workers; ferro replaces Redis with an in-process cache/queue and has no equivalent ACL management surface."
+  },
+  {
+    "file": "frappe/tests/test_removing_orphans.py",
+    "class": "TestRemovingOrphans",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Orphan entity cleanup (developer-mode module-sync)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests frappe.model.sync.remove_orphan_entities, a developer-mode file-system sync tool; ferro does not implement module/fixture sync logic."
+  },
+  {
+    "file": "frappe/tests/test_rename_doc.py",
+    "class": "TestRenameDoc",
+    "broad_area": "ORM-write",
+    "sub_area": "Document rename/merge (frappe.rename_doc, bulk_rename, autoincrement docs, child-table parenttype fix-up)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "frappe.rename_doc is a complex Python operation (link-field rewriting, controller renaming, DDL) that ferro does not reimplement; any rename support would require ferrod Python fallthrough."
+  },
+  {
+    "file": "frappe/tests/test_reportview.py",
+    "class": "TestReportview",
+    "broad_area": "Reports-Print",
+    "sub_area": "Report view CSV export and field-name extraction utility",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "export_query() and extract_fieldnames() are part of the Python report/export subsystem; ferro intentionally does not implement report export pipelines."
+  },
+  {
+    "file": "frappe/tests/test_safe_exec.py",
+    "class": "TestSafeExec",
+    "broad_area": "Framework-internal",
+    "sub_area": "RestrictedPython sandbox for server scripts",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "safe_exec is the server-script Python sandbox; ferro does not execute server scripts and has no safe_exec equivalent."
+  },
+  {
+    "file": "frappe/tests/test_safe_exec.py",
+    "class": "TestNoSafeExec",
+    "broad_area": "Framework-internal",
+    "sub_area": "ServerScriptNotEnabled guard when safe_exec is disabled",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests that safe_exec raises ServerScriptNotEnabled by default; purely Python, not relevant to ferro."
+  },
+  {
+    "file": "frappe/tests/test_safe_exec.py",
+    "class": "TestJinjaGlobals",
+    "broad_area": "Framework-internal",
+    "sub_area": "Jinja environment thread-safety and restrict_globals injection",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Jinja2 template environment setup; ferro uses Rust-side HTML rendering and does not use Frappe's Python Jinja globals."
+  },
+  {
+    "file": "frappe/tests/test_scheduler.py",
+    "class": "TestScheduler",
+    "broad_area": "Background-jobs",
+    "sub_area": "Python scheduler: enqueue_events, dormant-site detection, sleep alignment",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python RQ-based scheduler (enqueue_events, is_dormant, schedule_jobs_based_on_activity); ferro replaces this with an in-process Rust scheduler and does not share the Python scheduler API."
+  },
+  {
+    "file": "frappe/tests/test_search.py",
+    "class": "TestSearch",
+    "broad_area": "ORM-read",
+    "sub_area": "Desk link-search and search_widget (search_link, search_widget, user-permission filtering, SQL injection sanitization)",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "search_link/search_widget are whitelisted desk methods (frappe.desk.search.*) that ferro's desk.rs partially reimplements; the permission-aware query logic and SQL injection guards encode behaviors ferro must match, but the test calls Python directly, not HTTP."
+  },
+  {
+    "file": "frappe/tests/test_seen.py",
+    "class": "TestSeen",
+    "broad_area": "DocType-feature",
+    "sub_area": "_seen field tracking (getdoc marks document as seen per user)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "_seen is a Frappe Desk collaboration feature maintained by the Python getdoc hook; ferro's desk.rs loads documents but does not implement _seen tracking."
+  },
+  {
+    "file": "frappe/tests/test_sentry.py",
+    "class": "TestSentryScope",
+    "broad_area": "Framework-internal",
+    "sub_area": "Sentry scope enrichment for RQ background jobs (wait-time calculation)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.utils.sentry.set_scope for RQ job telemetry; this is observability tooling for the Python worker, entirely outside ferro's scope."
+  }
+]

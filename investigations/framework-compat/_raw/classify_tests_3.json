@@ -1,0 +1,142 @@
+[
+  {
+    "file": "frappe/tests/test_domainification.py",
+    "class": "TestDomainification",
+    "broad_area": "DocType-feature",
+    "sub_area": "domain-based visibility gating of doctypes and roles in permission manager",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Frappe domain/domainification subsystem (Domain Settings, restrict_to_domain on DocType/Role) which is a pure Python/ORM concern. Ferro has no concept of domain gating and does not reimplement this feature."
+  },
+  {
+    "file": "frappe/tests/test_dynamic_links.py",
+    "class": "TestDynamicLinks",
+    "broad_area": "ORM-write",
+    "sub_area": "cascading delete of dynamic-link child records on parent document delete",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests that deleting a parent document cascades to dynamically-linked children (Email Unsubscribe, Comments). Ferro's orm.rs implements delete but does not handle dynamic-link cascade cleanup; the behavior is partly in scope as a delete side-effect but the Python-side hook logic is not reimplemented."
+  },
+  {
+    "file": "frappe/tests/test_email.py",
+    "class": "TestEmail",
+    "broad_area": "Email",
+    "sub_area": "email queue building, flushing, CC/BCC visibility, unsubscribe URL signing",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the full Frappe email queueing and sending subsystem (frappe.sendmail, Email Queue, flush) which ferro intentionally does not implement; pure Python email processing is outside ferro's scope."
+  },
+  {
+    "file": "frappe/tests/test_email.py",
+    "class": "TestVerifiedRequests",
+    "broad_area": "Framework-internal",
+    "sub_area": "HMAC-signed URL round-trip via verified_command helpers",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.utils.verified_command signing/verification helpers in-process only; ferro does not expose or consume these signed URLs in its method surface."
+  },
+  {
+    "file": "frappe/tests/test_email.py",
+    "class": "TestEmailIntegrationTest",
+    "broad_area": "Email",
+    "sub_area": "live SMTP4Dev integration: actual email delivery and PDF attachment storage",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Requires a running SMTP4Dev service and exercises real email delivery plus PDF generation — neither of which ferro implements or intends to."
+  },
+  {
+    "file": "frappe/tests/test_exporter_fixtures.py",
+    "class": "TestDataImportFixtures",
+    "broad_area": "Dev-tooling",
+    "sub_area": "CSV export of fixture data with various name-filter modes and regex",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe's data export (export_csv) fixture utility used during bench migrate/fixture export; this is a dev/deployment tooling concern entirely absent from ferro's runtime surface."
+  },
+  {
+    "file": "frappe/tests/test_fixture_import.py",
+    "class": "TestFixtureImport",
+    "broad_area": "Dev-tooling",
+    "sub_area": "JSON fixture export and re-import round-trip for regular and singles doctypes",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests export_json/import_doc fixture round-trip in-process; this is data-import/migration tooling that ferro's bench install path handles separately (schema.rs/install.rs) and is not part of the REST runtime under test."
+  },
+  {
+    "file": "frappe/tests/test_fmt_datetime.py",
+    "class": "TestFmtDatetime",
+    "broad_area": "Framework-internal",
+    "sub_area": "date/time/datetime formatting utilities respecting system-wide format defaults",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Pure Python utility tests for frappe.utils date/time formatters; ferro returns raw ISO values from the DB and does not reimplement locale-aware date formatting."
+  },
+  {
+    "file": "frappe/tests/test_fmt_money.py",
+    "class": "TestFmtMoney",
+    "broad_area": "Framework-internal",
+    "sub_area": "monetary number formatting with various number formats and currency precision",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.utils.fmt_money in-process Python formatting logic; ferro returns raw numeric values over the API and does not implement currency formatting."
+  },
+  {
+    "file": "frappe/tests/test_form_load.py",
+    "class": "TestFormLoad",
+    "broad_area": "Meta-Schema",
+    "sub_area": "getdoc/getdoctype/get_docinfo Desk form-load APIs including field-level permission masking",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests frappe.desk.form.load.getdoc/getdoctype/get_docinfo which ferro reimplements in desk.rs (frappe.desk.form.load.*). The field-level permlevel masking and docinfo aggregation (comments, versions, attachments) are partially covered by ferro's desk path, but docinfo details (versions/tags/comms) may not be fully implemented."
+  },
+  {
+    "file": "frappe/tests/test_formatter.py",
+    "class": "TestFormatter",
+    "broad_area": "Framework-internal",
+    "sub_area": "frappe.format() for Currency fieldtype with default and doc-level currency",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python frappe.format() display formatter for Currency fields in-process; ferro returns raw field values over the API and does not reimplement display formatting."
+  },
+  {
+    "file": "frappe/tests/test_frappe_client.py",
+    "class": "TestFrappeClient",
+    "broad_area": "REST-API",
+    "sub_area": "FrappeClient session-auth CRUD (insert/get/update/delete/get_value) and token/Basic auth verification",
+    "exercises_ferro": "http",
+    "tier": "1:1",
+    "ferro_covers": "partial",
+    "rationale": "Makes real HTTP calls via FrappeClient (password session login) and direct requests with token/Basic auth headers to test CRUD and auth. Token/Basic auth and CRUD are fully in ferro scope (1:1); password session auth is NOT supported by ferro (no sid session store), so the session-based subset fails while the token auth test (test_auth_via_api_key_secret) exercises ferro's core auth.rs path directly."
+  },
+  {
+    "file": "frappe/tests/test_global_search.py",
+    "class": "TestGlobalSearch",
+    "broad_area": "Framework-internal",
+    "sub_area": "global search index build, FTS queries, web page indexing, and SQL injection prevention",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe's __global_search FTS table and related index rebuild/query utilities entirely in-process; ferro does not implement global search functionality."
+  },
+  {
+    "file": "frappe/tests/test_goal.py",
+    "class": "TestGoal",
+    "broad_area": "Reports-Print",
+    "sub_area": "monthly goal graph data aggregation over ORM reads",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.utils.goal chart/aggregation helpers (get_monthly_results/get_monthly_goal_graph_data) used for Desk number-card goals; this is a reporting/charting Python utility not implemented in ferro."
+  }
+]

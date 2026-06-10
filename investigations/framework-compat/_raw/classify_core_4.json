@@ -1,0 +1,202 @@
+[
+  {
+    "file": "frappe/core/doctype/scheduler_event/test_scheduler_event.py",
+    "class": "IntegrationTestSchedulerEvent",
+    "broad_area": "Background-jobs",
+    "sub_area": "Scheduler event doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "This is an empty stub class with no test methods. Scheduler events are background Python infrastructure that ferro does not reimplement."
+  },
+  {
+    "file": "frappe/core/doctype/security_settings/test_security_settings.py",
+    "class": "TestSecuritySettings",
+    "broad_area": "Framework-internal",
+    "sub_area": "security.txt generation logic and validation in SecuritySettings doctype",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call frappe.get_doc() directly to check Python-side validation methods (public_policy_section, public_contacts_section, security.txt rendering) — this is in-process Python controller logic that ferro does not reimplement."
+  },
+  {
+    "file": "frappe/core/doctype/server_script/test_server_script.py",
+    "class": "TestServerScript",
+    "broad_area": "Framework-internal",
+    "sub_area": "Server script execution: DocType events, API scripts, permission queries, rate limiting, scheduling",
+    "exercises_ferro": "mixed",
+    "tier": "shouldn't-care",
+    "ferro_covers": "no",
+    "rationale": "Server scripts are a Python safe-exec subsystem that pure ferro deliberately does not implement; some tests make HTTP calls to script-registered API endpoints but those only work via Python execution (ferrod might handle via pyfall, not pure ferro)."
+  },
+  {
+    "file": "frappe/core/doctype/session_default_settings/test_session_default_settings.py",
+    "class": "TestSessionDefaultSettings",
+    "broad_area": "Framework-internal",
+    "sub_area": "Session defaults applied at document insert time",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests set session defaults via in-process Python and verify field values on inserted docs; this is Python-side request-context session logic that ferro does not model."
+  },
+  {
+    "file": "frappe/core/doctype/sms_log/test_sms_log.py",
+    "class": "TestSMSLog",
+    "broad_area": "Email",
+    "sub_area": "SMS log doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty stub class with no test methods. SMS/communication subsystem is outside ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/sms_settings/test_sms_settings.py",
+    "class": "TestSMSSettings",
+    "broad_area": "Email",
+    "sub_area": "SMS settings doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty stub class with no test methods. SMS settings is outside ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/submission_queue/test_submission_queue.py",
+    "class": "TestSubmissionQueue",
+    "broad_area": "Background-jobs",
+    "sub_area": "Background submission and cancellation via RQ job queue",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests enqueue submission/cancellation via RQ background workers and poll job status — this is Python background-job infrastructure that ferro's in-process jobs.rs does not replicate at the same fidelity level."
+  },
+  {
+    "file": "frappe/core/doctype/system_settings/test_system_settings.py",
+    "class": "TestSystemSettings",
+    "broad_area": "Framework-internal",
+    "sub_area": "System settings doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty stub class with no test methods. System settings configuration is Python-side singleton CRUD that does not exercise ferro's HTTP surface."
+  },
+  {
+    "file": "frappe/core/doctype/translation/test_translation.py",
+    "class": "TestTranslation",
+    "broad_area": "Framework-internal",
+    "sub_area": "Translation doctype: i18n string lookups, parent language fallback, HTML sanitization of translations",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests call frappe._() directly to verify in-process translation cache behavior; the translation engine is Python-side and never exposed as a ferro REST endpoint."
+  },
+  {
+    "file": "frappe/core/doctype/user/test_user.py",
+    "class": "TestUser",
+    "broad_area": "Auth-Perm",
+    "sub_area": "User CRUD, user type logic, password reset flow, signup, rate limiting, mention parsing",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "User creation/deletion and role assignment are ORM operations ferro must handle; password reset and signup involve session/email flows outside ferro's pure-Rust scope, so only the CRUD behaviors are relevant to ferro."
+  },
+  {
+    "file": "frappe/core/doctype/user/test_user.py",
+    "class": "TestImpersonation",
+    "broad_area": "Auth-Perm",
+    "sub_area": "User impersonation via whitelisted method over HTTP (FrappeAPITestCase)",
+    "exercises_ferro": "http",
+    "tier": "somewhat",
+    "ferro_covers": "no",
+    "rationale": "Impersonation calls frappe.core.doctype.user.user.impersonate via HTTP then checks get_logged_user — this is a session-mutating action that relies on sid session state which ferro does not implement."
+  },
+  {
+    "file": "frappe/core/doctype/user_group/test_user_group.py",
+    "class": "TestUserGroup",
+    "broad_area": "Auth-Perm",
+    "sub_area": "User group doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty stub class with no test methods. User group management is in-process Python CRUD outside ferro's explicit scope."
+  },
+  {
+    "file": "frappe/core/doctype/user_group_member/test_user_group_member.py",
+    "class": "TestUserGroupMember",
+    "broad_area": "Auth-Perm",
+    "sub_area": "User group member doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Empty stub class with no test methods. User group membership is not part of ferro's permission model."
+  },
+  {
+    "file": "frappe/core/doctype/user_invitation/test_user_invitation.py",
+    "class": "IntegrationTestUserInvitation",
+    "broad_area": "Email",
+    "sub_area": "User invitation lifecycle: invite by email, accept/cancel/expire, API endpoints",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "User invitation flow is email-driven Python logic (invite_by_email, mark_expired_invitations, email queue); these are Python controller behaviors ferro does not reimplement."
+  },
+  {
+    "file": "frappe/core/doctype/user_permission/test_user_permission.py",
+    "class": "TestUserPermission",
+    "broad_area": "Auth-Perm",
+    "sub_area": "User permission rules: apply_to_all, applicable_for, nested doctypes, field defaults",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "User permissions directly affect which documents are visible via ferro's permission gate in auth.rs/orm.rs; the tests are in-process but encode the permission filtering contract ferro must honor when serving list/get requests."
+  },
+  {
+    "file": "frappe/core/doctype/user_type/test_user_type.py",
+    "class": "TestUserType",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Custom user types: select permission auto-propagation and default print/share/email perms",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "User type definitions shape which DocPerms get created and are thus relevant to ferro's permission checks, but the auto-propagation logic itself is Python controller behavior not reimplemented in ferro."
+  },
+  {
+    "file": "frappe/core/doctype/version/test_version.py",
+    "class": "TestHTMLDiff",
+    "broad_area": "Framework-internal",
+    "sub_area": "HTML diff generation utility functions for Version doctype",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Pure unit tests of Python helper functions (_generate_html_diff, _as_string, _should_generate_html_diff) that are internal to the Version doctype controller; ferro does not implement versioning."
+  },
+  {
+    "file": "frappe/core/doctype/version/test_version.py",
+    "class": "TestVersion",
+    "broad_area": "Framework-internal",
+    "sub_area": "Document version tracking: diff generation on save, onload HTML diffs",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Version creation on document save and onload diff rendering are Python DocType event behaviors that ferro does not reimplement; these tests exercise the Python version controller entirely in-process."
+  },
+  {
+    "file": "frappe/core/doctype/view_log/test_view_log.py",
+    "class": "TestViewLog",
+    "broad_area": "Framework-internal",
+    "sub_area": "View log insertion when getdoc is called",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests that frappe.desk.form.load.getdoc() records a ViewLog entry — this is a Python-side side-effect of form loading not replicated by ferro's REST/desk layer."
+  },
+  {
+    "file": "frappe/core/report/database_storage_usage_by_tables/test_database_storage_usage_by_tables.py",
+    "class": "TestDBUsageReport",
+    "broad_area": "Reports-Print",
+    "sub_area": "Database storage usage report querying table sizes",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests a Python script report that queries SQLite/MySQL information_schema for table sizes; report execution is a Python subsystem ferro does not reimplement."
+  }
+]

@@ -1,0 +1,302 @@
+[
+  {
+    "file": "frappe/tests/test_api.py",
+    "class": "FrappeAPITestCase",
+    "broad_area": "REST-API",
+    "sub_area": "base HTTP test harness with session/sid auth setup",
+    "exercises_ferro": "http",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "This is the base test class that sets up session-based auth (sid cookie) via LoginManager; ferro has no session store so sid auth always falls through to default_user. The harness structure is relevant since it drives all child REST tests against ferro's HTTP surface."
+  },
+  {
+    "file": "frappe/tests/test_api.py",
+    "class": "TestResourceAPI",
+    "broad_area": "REST-API",
+    "sub_area": "v1 /api/resource CRUD, filters, expand, list, auth",
+    "exercises_ferro": "http",
+    "tier": "1:1",
+    "ferro_covers": "partial",
+    "rationale": "Directly tests ferro's core /api/resource GET/POST/PUT/DELETE endpoints and response envelope; CRUD/filters/perm must be 1:1. expand and expand_links are confirmed gaps in ferro (empirical finding #4), so those specific tests fail; the rest of CRUD and list tests are the primary ferro obligation."
+  },
+  {
+    "file": "frappe/tests/test_api.py",
+    "class": "TestMethodAPI",
+    "broad_area": "REST-API",
+    "sub_area": "v1 /api/method ping, auth-cycle token, 404s, logs, realtime.get_user_info",
+    "exercises_ferro": "http",
+    "tier": "1:1",
+    "ferro_covers": "partial",
+    "rationale": "Tests ping (implemented), token auth cycle (implemented in auth.rs), 404 routing, and server message envelope; frappe.realtime.get_user_info is a known ferro gap (returns 404 instead of {}). Token auth tests are core 1:1 obligations."
+  },
+  {
+    "file": "frappe/tests/test_api.py",
+    "class": "TestReadOnlyMode",
+    "broad_area": "REST-API",
+    "sub_area": "read-only/maintenance mode — reads allowed, writes blocked (503)",
+    "exercises_ferro": "http",
+    "tier": "somewhat",
+    "ferro_covers": "no",
+    "rationale": "Tests maintenance_mode site config flag that blocks writes with 503 InReadOnlyMode; ferro does not implement maintenance_mode awareness so writes would succeed (not 503). This is a site-configuration policy ferro intentionally omits."
+  },
+  {
+    "file": "frappe/tests/test_api.py",
+    "class": "TestWSGIApp",
+    "broad_area": "Framework-internal",
+    "sub_area": "before_request/after_request hook ordering in WSGI pipeline",
+    "exercises_ferro": "http",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Python hook execution ordering (before_request/after_request) in the Frappe WSGI app — a Python middleware concern that ferro does not implement; ferro has no hook dispatch system."
+  },
+  {
+    "file": "frappe/tests/test_api.py",
+    "class": "TestAPIResponse",
+    "broad_area": "Reports-Print",
+    "sub_area": "PDF generation, binary/CSV download, private file download, login redirect",
+    "exercises_ferro": "http",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Covers PDF print format download, data_import template CSV/Excel, and private file serving — none of which ferro implements (pure-Rust build omits print/reports/file server). Login redirect behavior is session-auth specific."
+  },
+  {
+    "file": "frappe/tests/test_api_v2.py",
+    "class": "TestResourceAPIV2",
+    "broad_area": "REST-API",
+    "sub_area": "v2 /api/v2/document CRUD, copy, list, 404 error envelope",
+    "exercises_ferro": "http",
+    "tier": "1:1",
+    "ferro_covers": "partial",
+    "rationale": "Tests ferro's /api/v2/document endpoints (orm.rs + route_v2_document) with the v2 JSON envelope; CRUD, list, and 404 error format are core 1:1 obligations. Write tests are harness-blocked (SQLite busy) but the read and error-shape assertions encode ferro's required behavior."
+  },
+  {
+    "file": "frappe/tests/test_api_v2.py",
+    "class": "TestMethodAPIV2",
+    "broad_area": "REST-API",
+    "sub_area": "v2 /api/v2/method ping, auth, logs, run_doc_method, shorthand methods",
+    "exercises_ferro": "http",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests the v2 method envelope format (data key instead of message), token auth, ping, and run_doc_method; ferro must match the v2 response envelope for these. shorthand controller methods and run_doc_method-in-memory require Python fallthrough (ferrod), not pure ferro."
+  },
+  {
+    "file": "frappe/tests/test_api_v2.py",
+    "class": "TestBulkOperationsV2",
+    "broad_area": "REST-API",
+    "sub_area": "v2 bulk_delete and bulk_update across doctypes",
+    "exercises_ferro": "http",
+    "tier": "somewhat",
+    "ferro_covers": "no",
+    "rationale": "Tests /api/v2/document/<dt>/bulk_delete and bulk_update endpoints which are confirmed ferro gaps (empirical finding #6 — returns 404/405). Ferro should implement these but currently does not; bulk_update with enqueue is also a background-job dependency."
+  },
+  {
+    "file": "frappe/tests/test_api_v2.py",
+    "class": "TestDocTypeAPIV2",
+    "broad_area": "Meta-Schema",
+    "sub_area": "v2 /api/v2/doctype meta and count endpoints",
+    "exercises_ferro": "http",
+    "tier": "1:1",
+    "ferro_covers": "partial",
+    "rationale": "Tests the /api/v2/doctype/<dt>/meta and count endpoints; meta is served by ferro's meta.rs (desk.rs route) and count by orm.rs. These are core ferro-implemented endpoints that must match 1:1."
+  },
+  {
+    "file": "frappe/tests/test_api_v2.py",
+    "class": "TestReadOnlyMode",
+    "broad_area": "REST-API",
+    "sub_area": "v2 read-only/maintenance mode writes blocked (503 with v2 errors envelope)",
+    "exercises_ferro": "http",
+    "tier": "somewhat",
+    "ferro_covers": "no",
+    "rationale": "Same as v1 TestReadOnlyMode but verifies the v2 errors[] envelope format for 503; ferro does not implement maintenance_mode awareness, making this out-of-scope for pure ferro."
+  },
+  {
+    "file": "frappe/tests/test_assign.py",
+    "class": "TestAssign",
+    "broad_area": "DocType-feature",
+    "sub_area": "document assignment (frappe.desk.form.assign_to), group-by counts",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Python-side assign_to feature and desk listview group-by logic via direct frappe.* calls; this is an in-process Python feature not exposed as a core REST endpoint ferro reimplements."
+  },
+  {
+    "file": "frappe/tests/test_auth.py",
+    "class": "TestAuth",
+    "broad_area": "Auth-Perm",
+    "sub_area": "login policy: mobile/username/email login modes, deny_multiple_sessions, disable_user_pass_login, email link login",
+    "exercises_ferro": "http",
+    "tier": "somewhat",
+    "ferro_covers": "no",
+    "rationale": "Tests System Settings login policy enforcement (allow_login_using_mobile_number, deny_multiple_sessions, etc.) via FrappeClient password-based session auth — all confirmed ferro gaps (#3, #2). Ferro does not enforce login policy flags and has no session store."
+  },
+  {
+    "file": "frappe/tests/test_auth.py",
+    "class": "TestAllowedReferrer",
+    "broad_area": "Auth-Perm",
+    "sub_area": "HTTP referrer/origin allowlist check in HTTPRequest",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests frappe.auth.HTTPRequest.is_allowed_referrer() — a Python-level CSRF referrer check in the Frappe WSGI middleware; ferro has its own request handling and does not implement this Python class."
+  },
+  {
+    "file": "frappe/tests/test_auth.py",
+    "class": "TestLoginAttemptTracker",
+    "broad_area": "Auth-Perm",
+    "sub_area": "brute-force account lock/unlock via Redis LoginAttemptTracker",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Python LoginAttemptTracker class (Redis-backed account lockout after failed attempts); this is a Frappe Python subsystem ferro does not reimplement — login attempt tracking is absent from auth.rs."
+  },
+  {
+    "file": "frappe/tests/test_auth.py",
+    "class": "TestSessionExpiry",
+    "broad_area": "Auth-Perm",
+    "sub_area": "session expiry based on System Settings session_expiry setting",
+    "exercises_ferro": "http",
+    "tier": "somewhat",
+    "ferro_covers": "no",
+    "rationale": "Tests that sessions expire per System Settings configuration using sid-based auth; ferro issues random sid cookies but has no session store or expiry logic (confirmed gap #2), so session expiry cannot be verified via ferro."
+  },
+  {
+    "file": "frappe/tests/test_background_jobs.py",
+    "class": "TestBackgroundJobs",
+    "broad_area": "Background-jobs",
+    "sub_area": "RQ job enqueue, failed job cleanup, job hooks (before_job/after_job)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python-side RQ background job lifecycle (enqueue, remove_failed_jobs, job hooks); ferro's jobs.rs replaces RQ with an in-process implementation but these test the Python RQ API directly — not ferro's HTTP surface."
+  },
+  {
+    "file": "frappe/tests/test_base_document.py",
+    "class": "TestBaseDocument",
+    "broad_area": "Framework-internal",
+    "sub_area": "BaseDocument docstatus, extend_doctype_class hook, pickling",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python BaseDocument class internals (docstatus enum, extend_doctype_class hook mechanism, pickle support); these are pure Python model layer concerns that ferro does not replicate — ferro uses its own Rust document representation."
+  },
+  {
+    "file": "frappe/tests/test_boilerplate.py",
+    "class": "TestBoilerPlate",
+    "broad_area": "Dev-tooling",
+    "sub_area": "frappe new-app boilerplate code generation and CI yaml validation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the frappe boilerplate utility for generating new app scaffolding (creates git repos, YAML CI configs, patch files); this is a developer tooling concern entirely outside ferro's runtime scope."
+  },
+  {
+    "file": "frappe/tests/test_boot.py",
+    "class": "TestBootData",
+    "broad_area": "Framework-internal",
+    "sub_area": "boot data: unseen notes, mark_as_seen",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Python get_unseen_notes/mark_as_seen boot utilities — Desk notification infrastructure served by frappe.boot which ferro's desk.rs approximates but these specific note-boot methods are Python-only."
+  },
+  {
+    "file": "frappe/tests/test_boot.py",
+    "class": "TestPermissionQueries",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Server Script permission query for reports (get_user_pages_or_reports)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests permission_query Server Scripts applied to Report visibility — a Python safe_exec feature that ferro intentionally does not implement; server scripts and permission_query hooks are outside pure ferro scope."
+  },
+  {
+    "file": "frappe/tests/test_caching.py",
+    "class": "TestCachingUtils",
+    "broad_area": "Framework-internal",
+    "sub_area": "request_cache decorator behavior and hashability",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python request_cache decorator (in-process per-request memoization); this is a Python framework utility with no equivalent in ferro's Rust implementation."
+  },
+  {
+    "file": "frappe/tests/test_caching.py",
+    "class": "TestSiteCache",
+    "broad_area": "Framework-internal",
+    "sub_area": "site_cache decorator with TTL via HTTP method calls",
+    "exercises_ferro": "http",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the site_cache decorator (Redis-backed function-level cache with TTL) by counting external service calls via HTTP; ferro uses its own cache.rs and does not implement Frappe's site_cache decorator contract."
+  },
+  {
+    "file": "frappe/tests/test_caching.py",
+    "class": "TestRedisCache",
+    "broad_area": "Framework-internal",
+    "sub_area": "redis_cache decorator TTL, arg differentiation, global clear",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python redis_cache decorator utility (TTL-based function caching via Redis); purely a Python framework caching utility, not part of ferro's HTTP API surface."
+  },
+  {
+    "file": "frappe/tests/test_caching.py",
+    "class": "TestDocumentCache",
+    "broad_area": "ORM-read",
+    "sub_area": "frappe.get_cached_doc invalidation on db_set/rollback",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python-side get_cached_doc + Redis invalidation on db_set and rollback; this is in-process ORM cache behavior (frappe.cache) not directly related to ferro's HTTP-layer ORM."
+  },
+  {
+    "file": "frappe/tests/test_caching.py",
+    "class": "TestRedisWrapper",
+    "broad_area": "Framework-internal",
+    "sub_area": "Redis wrapper: delete_keys, hash ops, user/doctype cache clear, backward compat",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe's Redis wrapper (hset/hget/hdel/flushall/clear_cache) — all Python Redis client concerns; ferro has its own cache.rs (in-process hashmap) and does not expose or test Redis wrapper APIs."
+  },
+  {
+    "file": "frappe/tests/test_caching.py",
+    "class": "TestHttpCache",
+    "broad_area": "REST-API",
+    "sub_area": "HTTP cache-control headers (max-age, private) on cacheable methods",
+    "exercises_ferro": "http",
+    "tier": "mostly",
+    "ferro_covers": "no",
+    "rationale": "Tests that frappe.client.is_document_amended response includes Cache-Control: max-age=600, private headers; ferro does not currently set cache-control headers on its responses, making this a gap in HTTP caching behavior."
+  },
+  {
+    "file": "frappe/tests/test_child_table.py",
+    "class": "TestChildTable",
+    "broad_area": "Meta-Schema",
+    "sub_area": "child table DocType creation, istable flag, column presence, transitions",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python-side DocType creation/modification with istable flag and DDL column checks (frappe.db.has_column); this is schema management via the Python ORM, not ferro's HTTP API or schema.rs DDL path."
+  },
+  {
+    "file": "frappe/tests/test_client.py",
+    "class": "TestClient",
+    "broad_area": "REST-API",
+    "sub_area": "frappe.client.* API: set_value, delete, run_doc_method, get, insert, validate_link_and_fetch",
+    "exercises_ferro": "mixed",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests both in-process calls to frappe.client functions AND some HTTP requests (array_values_in_request_args hits /api/method/frappe.client.get_list over HTTP). Core get/insert/delete map to ferro's orm.rs; set_value, validate_link_and_fetch are desk.rs methods ferro partially implements."
+  },
+  {
+    "file": "frappe/tests/test_client_cache.py",
+    "class": "TestClientCache",
+    "broad_area": "Framework-internal",
+    "sub_area": "Redis-backed client-local cache with TTL, invalidation, statistics",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.client_cache (a local in-memory + Redis hybrid cache with pub/sub invalidation); this is a Python-side caching subsystem not relevant to ferro's HTTP data plane."
+  }
+]

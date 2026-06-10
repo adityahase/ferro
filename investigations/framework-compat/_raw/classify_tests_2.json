@@ -1,0 +1,282 @@
+[
+  {
+    "file": "frappe/tests/test_concurrency_limiter.py",
+    "class": "TestConcurrentLimit",
+    "broad_area": "Framework-internal",
+    "sub_area": "concurrent_limit decorator — Redis-backed per-function semaphore, 503 on exhaustion, token release on success/exception, self-heal after TTL expiry, fail-open when Redis down",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python concurrent_limit decorator and its interaction with frappe.cache (Redis) entirely in-process; ferro has no equivalent concurrency-limiter middleware and intentionally does not reimplement this Python subsystem."
+  },
+  {
+    "file": "frappe/tests/test_config.py",
+    "class": "TestConfig",
+    "broad_area": "Framework-internal",
+    "sub_area": "get_modules_from_all_apps_for_user — module list derivation from Module Def doctype",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Calls the Python utility get_modules_from_all_apps_for_user() in-process; ferro does not expose a module-list endpoint and this is a Desk boot helper, not a REST API ferro reimplements."
+  },
+  {
+    "file": "frappe/tests/test_cors.py",
+    "class": "TestCORS",
+    "broad_area": "REST-API",
+    "sub_area": "CORS response headers — Access-Control-Allow-Origin/Methods/Headers/Credentials/Vary based on allow_cors config",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests that the CORS headers are correctly added/suppressed based on site config; ferro's HTTP server must also emit correct CORS headers for cross-origin Desk/SPA clients, so the behavior is in scope, but the tests drive Frappe's WSGI stack in-process rather than hitting ferro over HTTP."
+  },
+  {
+    "file": "frappe/tests/test_dashboard_connections.py",
+    "class": "TestDashboardConnections",
+    "broad_area": "DocType-feature",
+    "sub_area": "frappe.desk.notifications.get_open_count — internal/external link counts on Desk dashboard connections panel",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Exercises the Desk dashboard connections Python logic (get_open_count) entirely in-process; ferro does not reimplement this Desk-specific helper and it is not part of the core REST/ORM contract."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestDB",
+    "broad_area": "DB-layer",
+    "sub_area": "frappe.db Python ORM — get_value/get_values, set_value, exists, count, bulk_insert, transaction writes, read-only mode, datetime serialization, savepoint",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests Frappe's Python database layer (frappe.db.*) directly in-process; ferro reimplements the same SQLite read/write semantics in orm.rs but uses its own Rust code path — these tests encode the ORM contract ferro must match (filters, set_value semantics, bulk_insert) even though they do not exercise ferro over HTTP."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestDDLCommandsMaria",
+    "broad_area": "DB-layer",
+    "sub_area": "MariaDB DDL — rename_table, describe, change_column_type, add_index",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "MariaDB-only DDL operations (RENAME TABLE, CHANGE COLUMN TYPE) are irrelevant to ferro which targets SQLite; ferro's schema.rs handles DDL separately and does not replicate Python-side MariaDB DDL helpers."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestDBSetValue",
+    "broad_area": "DB-layer",
+    "sub_area": "frappe.db.set_value — single/multi-row updates, update_modified options, single doctype field updates",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests the in-process set_value/get_value contract which maps to ferro's orm.rs update path; ferro must produce equivalent behavior for ORM writes over HTTP, but these tests never call ferro directly."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestDDLCommandsPost",
+    "broad_area": "DB-layer",
+    "sub_area": "PostgreSQL DDL — rename, describe, change_column_type, add_index, unique constraints",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "PostgreSQL-specific DDL tests; ferro targets SQLite and does not reimplement Postgres DDL helpers."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestTransactionManagement",
+    "broad_area": "DB-layer",
+    "sub_area": "PostgreSQL transaction ID consistency across commit/rollback",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "PostgreSQL-specific transaction ID test using txid_current(); ferro uses SQLite and handles transactions natively in Rust, making this test irrelevant."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestReplicaConnections",
+    "broad_area": "DB-layer",
+    "sub_area": "Read replica connection switching via frappe.read_only() decorator",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python-level read-replica connection management; ferro does not implement read-replica routing and this is a Python framework internal unrelated to ferro's REST surface."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestConcurrency",
+    "broad_area": "DB-layer",
+    "sub_area": "SQLite/DB row-level locking — skip_locked, no-wait, delete race condition, value cache invalidation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests frappe.db-level locking primitives (FOR UPDATE SKIP LOCKED, NOWAIT) via Python ORM using dual connections; ferro manages its own SQLite concurrency in Rust and these Python-DB-layer locking tests do not exercise it."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestSqlIterator",
+    "broad_area": "DB-layer",
+    "sub_area": "frappe.db.sql iterator/cursor modes — as_iterator, pluck, unbuffered cursor",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python-level SQL iterator and unbuffered cursor abstractions that are internal to frappe.db; ferro uses its own Rust SQLite driver and does not expose these Python cursor concepts."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestPostgresSchemaQueryIndependence",
+    "broad_area": "DB-layer",
+    "sub_area": "PostgreSQL multi-schema isolation — table/column introspection scoped to correct schema",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "PostgreSQL-only multi-schema tests; ferro targets SQLite which has no schema isolation concept."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestDbConnectWithEnvCredentials",
+    "broad_area": "DB-layer",
+    "sub_area": "frappe.db.connect() environment-variable credential override (DB_NAME/HOST/USER/PASSWORD/PORT)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Python frappe.db.connect() credential handling via environment variables; ferro reads its own site_config.json for DB path and has no equivalent credential-override mechanism to test."
+  },
+  {
+    "file": "frappe/tests/test_db.py",
+    "class": "TestMariaDBExceptionUtil",
+    "broad_area": "DB-layer",
+    "sub_area": "MariaDB exception utility methods — is_deadlocked/timedout/table_missing etc. with empty args",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "MariaDB-specific exception utility methods; ferro uses SQLite and maps errors in Rust without this Python utility layer."
+  },
+  {
+    "file": "frappe/tests/test_db_query.py",
+    "class": "TestDBQuery",
+    "broad_area": "ORM-read",
+    "sub_area": "DatabaseQuery / frappe.get_all — filters, child table joins, permission-masking, permlevel fields, user permissions, date filters, order_by, distinct, ignore_permissions",
+    "exercises_ferro": "in-process-only",
+    "tier": "1:1",
+    "ferro_covers": "partial",
+    "rationale": "Tests the full DatabaseQuery filter/permission logic that ferro's orm.rs must replicate exactly for get_list; ferro's build_list_query implements the same filter operators, perm-level masking, and user-permission scoping that this test class encodes."
+  },
+  {
+    "file": "frappe/tests/test_db_query.py",
+    "class": "TestReportView",
+    "broad_area": "ORM-read",
+    "sub_area": "frappe.desk.reportview — get_count, get with field/permlevel filters, child table filter, distinct",
+    "exercises_ferro": "in-process-only",
+    "tier": "mostly",
+    "ferro_covers": "partial",
+    "rationale": "Tests reportview.get_count and reportview.get which ferro exposes via desk.rs (frappe.desk.reportview.*); ferro must produce the same count/filter semantics, though the tests drive the Python handler in-process rather than over HTTP."
+  },
+  {
+    "file": "frappe/tests/test_db_update.py",
+    "class": "TestDBUpdate",
+    "broad_area": "Meta-Schema",
+    "sub_area": "frappe.db.updatedb — DDL sync from DocType definition (column types, defaults, indexes, unique constraints, bigint/UUID migration)",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests the Python DDL migration logic (updatedb) that maps DocType field definitions to SQL column types; ferro's schema.rs implements an equivalent mapping for SQLite install/migrate, so the type-mapping semantics are relevant even though the tests are in-process Python."
+  },
+  {
+    "file": "frappe/tests/test_db_update.py",
+    "class": "TestDBUpdateSanityChecks",
+    "broad_area": "Meta-Schema",
+    "sub_area": "No-op migrate check — ensure repeated reload_doctype does not emit unnecessary ALTER statements",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "SQLite-skipped test verifying Python's idempotent DDL migration; ferro's schema.rs has its own md5-gated idempotent sync and this specific Python-level ALTER suppression test does not apply to ferro."
+  },
+  {
+    "file": "frappe/tests/test_defaults.py",
+    "class": "TestDefaults",
+    "broad_area": "Framework-internal",
+    "sub_area": "frappe.defaults — global/user defaults set/get/add/clear, user-permission filtering of defaults",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python defaults system (tabDefaultValue) which is a Frappe framework internal used by the Desk; ferro does not reimplement defaults management and it is not part of the REST API ferro exposes."
+  },
+  {
+    "file": "frappe/tests/test_deferred_insert.py",
+    "class": "TestDeferredInsert",
+    "broad_area": "Background-jobs",
+    "sub_area": "deferred_insert — cache-buffered batch insert flushed to DB via save_to_db",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the deferred insert mechanism that buffers route history writes via cache before flushing; ferro does not reimplement deferred insert and this is a Python background-job pattern."
+  },
+  {
+    "file": "frappe/tests/test_docstatus.py",
+    "class": "TestDocStatus",
+    "broad_area": "Framework-internal",
+    "sub_area": "DocStatus enum — is_draft/is_submitted/is_cancelled predicate methods",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests a pure Python IntEnum utility class with no HTTP surface; ferro stores docstatus as an integer field and does not need to reimplement this enum's predicate methods."
+  },
+  {
+    "file": "frappe/tests/test_document.py",
+    "class": "TestDocument",
+    "broad_area": "DocType-feature",
+    "sub_area": "Document insert/update/delete/load, naming, child tables, hooks, version tracking, submission workflow, validation",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests the Python Document class lifecycle (insert, save, submit, cancel, naming, child-table handling, hooks); ferro's orm.rs covers the insert/update/read data path but not Python-side hooks, validation, or WebsiteGenerator — the ORM contract behaviors (naming, child tables) are relevant to ferro even though tests are in-process."
+  },
+  {
+    "file": "frappe/tests/test_document.py",
+    "class": "TestDocumentWebView",
+    "broad_area": "Web-Website",
+    "sub_area": "WebsiteGenerator web view — Document Share Key auth, GET /ToDo/<name>?key=, 403/410 responses",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests Frappe's website generator web-view rendering with document share keys via Python WSGI stack; ferro does not implement the website generator or share-key authentication for HTML views."
+  },
+  {
+    "file": "frappe/tests/test_document.py",
+    "class": "TestLazyDocument",
+    "broad_area": "ORM-read",
+    "sub_area": "frappe.get_lazy_doc — deferred child-table fetch, query-count efficiency, db_update_all",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python LazyDocument descriptor and deferred child-table loading optimization; ferro always fetches child tables eagerly in orm.rs and does not implement lazy document loading."
+  },
+  {
+    "file": "frappe/tests/test_document.py",
+    "class": "TestGetDocs",
+    "broad_area": "ORM-read",
+    "sub_area": "frappe.get_docs — bulk document retrieval with child tables, filters, limit, order_by, as_iterator",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests frappe.get_docs bulk retrieval which parallels ferro's get_list + per-doc child-table fetch; the filter/limit/order_by semantics are relevant to ferro's orm.rs but get_docs is a Python-only API not directly exposed by ferro's HTTP routes."
+  },
+  {
+    "file": "frappe/tests/test_document.py",
+    "class": "TestDocsCollection",
+    "broad_area": "DocType-feature",
+    "sub_area": "DocsCollection descriptor — typed doctype-scoped helpers (.docs.get/.new/.last/.filter/.delete) on Document subclasses",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests a Python-only controller-class descriptor API (DocsCollection) that is syntactic sugar over frappe.get_doc/get_list; ferro has no equivalent typed-descriptor concept and this is purely a Python framework convenience."
+  },
+  {
+    "file": "frappe/tests/test_document_locks.py",
+    "class": "TestDocumentLocks",
+    "broad_area": "DocType-feature",
+    "sub_area": "Document locking — lock/unlock, DocumentLockedError on concurrent lock, auto-expiry after N days",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldn't-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Python document-locking mechanism (stored in tabCommunication/cache); ferro does not implement document locks and the REST API ferro exposes does not include a locking endpoint."
+  }
+]

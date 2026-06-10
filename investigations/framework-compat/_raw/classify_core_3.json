@@ -1,0 +1,192 @@
+[
+  {
+    "file": "frappe/core/doctype/package_import/test_package_import.py",
+    "class": "TestPackageImport",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Package import (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Stub class with no test methods; package import is a dev/deployment tooling concern entirely outside ferro's REST/ORM scope."
+  },
+  {
+    "file": "frappe/core/doctype/package_release/test_package_release.py",
+    "class": "TestPackageRelease",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Package release (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Stub class with no test methods; package release management is a dev-tooling concern ferro does not implement."
+  },
+  {
+    "file": "frappe/core/doctype/page/test_page.py",
+    "class": "TestPage",
+    "broad_area": "Meta-Schema",
+    "sub_area": "Page doctype naming validation and file-system trashing in developer mode",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests call frappe.get_doc/insert/delete in-process and check developer-mode filesystem side-effects; ferro does not implement Page naming enforcement or developer-mode file management."
+  },
+  {
+    "file": "frappe/core/doctype/patch_log/test_patch_log.py",
+    "class": "TestPatchLog",
+    "broad_area": "Framework-internal",
+    "sub_area": "Patch log (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Stub class with no test methods; patch/migration logging is a Python-side framework-internal concern not relevant to ferro's runtime."
+  },
+  {
+    "file": "frappe/core/doctype/permission_inspector/test_permission_inspector.py",
+    "class": "TestPermissionInspector",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Permission inspector (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Stub class with no test methods; the permission inspector UI helper is a Python-side tool not exercised over HTTP against ferro."
+  },
+  {
+    "file": "frappe/core/doctype/permission_log/test_permission_log.py",
+    "class": "TestPermissionLog",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Permission log (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Stub class with no test methods; permission audit logging is a Python-side framework concern outside ferro's scope."
+  },
+  {
+    "file": "frappe/core/doctype/permission_type/test_permission_type.py",
+    "class": "IntegrationTestPermissionType",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Custom permission types — creation, reserved-name validation, and has_permission checks",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests create custom permission types via frappe.get_doc/insert in-process and call frappe.has_permission; ferro's auth.rs only handles standard read/write/delete permission levels and does not implement extensible custom ptype fields."
+  },
+  {
+    "file": "frappe/core/doctype/prepared_report/test_prepared_report.py",
+    "class": "TestPreparedReport",
+    "broad_area": "Reports-Print",
+    "sub_area": "Prepared report queueing, background execution, and data comparison",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests enqueue background report jobs via frappe.get_doc and wait on RQ completion; ferro does not implement the report engine or background job enqueue pipeline."
+  },
+  {
+    "file": "frappe/core/doctype/recorder/test_recorder.py",
+    "class": "TestRecorder",
+    "broad_area": "Dev-tooling",
+    "sub_area": "SQL query recorder — list, filter, serialization",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the in-process frappe.recorder middleware that captures SQL queries for developer inspection; ferro does not implement a query recorder subsystem."
+  },
+  {
+    "file": "frappe/core/doctype/recorder/test_recorder.py",
+    "class": "TestQueryOptimization",
+    "broad_area": "Dev-tooling",
+    "sub_area": "SQL query index optimization suggestion",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the _optimize_query helper that suggests DB indexes; this is a MariaDB-only developer tool with no equivalent in ferro."
+  },
+  {
+    "file": "frappe/core/doctype/recorder_query/test_recorder_query.py",
+    "class": "TestRecorderQuery",
+    "broad_area": "Dev-tooling",
+    "sub_area": "Recorder query doctype (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Stub class with no test methods; the RecorderQuery doctype is a developer introspection tool not implemented in ferro."
+  },
+  {
+    "file": "frappe/core/doctype/report/test_report.py",
+    "class": "TestReport",
+    "broad_area": "Reports-Print",
+    "sub_area": "Report builder, query report, script report, custom columns, permissions, cache invalidation",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "All tests exercise frappe's Python report engine (Report Builder, Query Report, Script Report) and session boot-info caching in-process; ferro does not implement the report generation pipeline."
+  },
+  {
+    "file": "frappe/core/doctype/role/test_role.py",
+    "class": "TestUser",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Role disable propagation, desk-access flag effect on user_type, get_users_by_role",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests in-process role management that encodes behaviors ferro must replicate — disabled roles should not grant access and role membership affects user classification — but the specific user_type field logic and disk-access propagation are Python-side business logic not directly in ferro's auth.rs."
+  },
+  {
+    "file": "frappe/core/doctype/role_permission_for_page_and_report/test_role_permission_for_page_and_report.py",
+    "class": "TestRolePermissionforPageandReport",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Role permission for page and report (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Stub class with no test methods; page/report role permissions are a desk-layer concern that ferro does not implement."
+  },
+  {
+    "file": "frappe/core/doctype/role_profile/test_role_profile.py",
+    "class": "TestRoleProfile",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Role profile CRUD — create, assign to user, update, propagation to user.roles",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests create and modify Role Profile documents and verify role propagation to User records in-process; ferro reads roles directly from tabHasRole and does not implement role profile propagation logic."
+  },
+  {
+    "file": "frappe/core/doctype/rq_job/test_rq_job.py",
+    "class": "TestRQJob",
+    "broad_area": "Background-jobs",
+    "sub_area": "RQ job enqueue, status, dedup, stop, burst worker, memory usage",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Redis Queue background job subsystem (enqueue, wait, stop, worker burst); ferro replaces RQ with an in-process jobs.rs for bench-mode but the RQ DocType management layer tested here is a Python-side concern."
+  },
+  {
+    "file": "frappe/core/doctype/rq_worker/test_rq_worker.py",
+    "class": "TestRQWorker",
+    "broad_area": "Background-jobs",
+    "sub_area": "RQ worker list and serialization",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the RQWorker.get_list() helper that introspects running Redis Queue workers; this is a Python/RQ-specific operational tool with no counterpart in ferro."
+  },
+  {
+    "file": "frappe/core/doctype/scheduled_job_log/test_scheduled_job_log.py",
+    "class": "TestScheduledJobLog",
+    "broad_area": "Background-jobs",
+    "sub_area": "Scheduled job log (stub, no test methods)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Stub class with no test methods; scheduled job logging is part of the Python scheduler subsystem ferro does not implement."
+  },
+  {
+    "file": "frappe/core/doctype/scheduled_job_type/test_scheduled_job_type.py",
+    "class": "TestScheduledJobType",
+    "broad_area": "Background-jobs",
+    "sub_area": "Scheduled job type sync, cron/daily/weekly/monthly/maintenance schedule due-time logic",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests Frappe's Python scheduler (sync_jobs, is_event_due, cron parsing) entirely in-process; ferro's jobs.rs handles scheduling internally and does not expose or replicate this doctype-based scheduler API."
+  }
+]

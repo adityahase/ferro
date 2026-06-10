@@ -1,0 +1,152 @@
+[
+  {
+    "file": "frappe/tests/test_helpers.py",
+    "class": "(module-level helpers, no TestCase class)",
+    "broad_area": "Framework-internal",
+    "sub_area": "Test fixture helper functions for blog/category/blogger doctypes; no test class",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "This file contains only helper functions (create_test_blog_post, setup_for_tests, etc.) used by other test files; there is no TestCase class and nothing is exercised over HTTP. Ferro has no obligation here."
+  },
+  {
+    "file": "frappe/tests/test_hooks.py",
+    "class": "TestHooks",
+    "broad_area": "Framework-internal",
+    "sub_area": "Hook registry: app_name, doc_events, override_doctype_class, has_permission hook, ignore_links_on_delete, fixture export prefix",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "All tests call frappe.* in-process and test the Python hook dispatch mechanism; ferro has no hook registry, no Python event system, and no fixture-export feature — this is intentionally absent from the pure-Rust build."
+  },
+  {
+    "file": "frappe/tests/test_hooks.py",
+    "class": "TestAPIHooks",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Custom auth_hook: sets user via Authorization Bearer token through HTTP",
+    "exercises_ferro": "http",
+    "tier": "somewhat",
+    "ferro_covers": "no",
+    "rationale": "TestAPIHooks sends a real HTTP request and expects a custom auth_hook to run (setting the user from a custom token prefix); ferro's auth.rs has no hook dispatch and would ignore this custom hook, returning a different user. Partial fidelity is acceptable given the hook system is intentionally absent."
+  },
+  {
+    "file": "frappe/tests/test_linked_with.py",
+    "class": "TestLinkedWith",
+    "broad_area": "ORM-read",
+    "sub_area": "linked_with: references across doctypes by link/dynamic-link fields, submitted linked docs, delete integrity, reserved SQL keyword fieldnames",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests call frappe.desk.form.linked_with Python functions directly (no HTTP); the linked_with subsystem is not implemented in ferro and is not part of its REST surface, so ferro has no obligation here."
+  },
+  {
+    "file": "frappe/tests/test_listview.py",
+    "class": "TestListView",
+    "broad_area": "ORM-read",
+    "sub_area": "List View Settings CRUD and get_group_by_count / reportview.get() with comment count",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests call frappe.db and frappe.desk.reportview.get() in-process; the reportview.get path (get_list with filters, group-by) encodes ORM semantics that ferro reimplements via orm.rs, but the specific List View Settings and group_by_count features are not in ferro's HTTP surface and are tested entirely in-process."
+  },
+  {
+    "file": "frappe/tests/test_local_proxy.py",
+    "class": "TestFrappeLocal",
+    "broad_area": "Framework-internal",
+    "sub_area": "frappe.local thread-local proxy / LocalProxy override correctness",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "n/a",
+    "rationale": "Tests the Werkzeug LocalProxy threading behaviour of frappe.local; this is a Python runtime concern with no HTTP surface and no analogue in ferro's Rust codebase."
+  },
+  {
+    "file": "frappe/tests/test_mask_fields.py",
+    "class": "TestMaskFieldValue",
+    "broad_area": "Auth-Perm",
+    "sub_area": "mask_field_value utility: per-fieldtype masking patterns (Data, Link, Phone, Email, Date, Time, None/empty)",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Calls the Python mask_field_value() utility function directly; ferro does not implement field masking (mask=1 DocField attribute), so this pure utility test is irrelevant to ferro."
+  },
+  {
+    "file": "frappe/tests/test_mask_fields.py",
+    "class": "TestMaskFieldsBehaviour",
+    "broad_area": "Auth-Perm",
+    "sub_area": "End-to-end field masking: get_doc, apply_fieldlevel_read_permissions, db.get_list masking for non-admin, _restore_masked_fields_from_db, mask permission property",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Python document lifecycle for field masking (mask=1 DocField); ferro has no concept of field-level masking in its ORM layer, so these behaviors are intentionally absent and not tested over HTTP."
+  },
+  {
+    "file": "frappe/tests/test_mask_fields.py",
+    "class": "TestMaskFieldsWithUserPermissions",
+    "broad_area": "Auth-Perm",
+    "sub_area": "Masked Link field + User Permissions interaction: read and save without permission error",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Regression test for masked Link field + user-permission gating in the Python document layer; ferro does not implement field masking so this entire class is out of scope for the pure-Rust build."
+  },
+  {
+    "file": "frappe/tests/test_model_utils.py",
+    "class": "TestModelUtils",
+    "broad_area": "Meta-Schema",
+    "sub_area": "get_fetch_values, get_permitted_fields (per user/role, core doctypes, child tables), is_default_field",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests in-process Python model utilities; get_permitted_fields encodes permission-filtered field lists that ferro's auth.rs/meta.rs must replicate for correct ORM masking, but the Python functions themselves are not exposed over HTTP by ferro directly."
+  },
+  {
+    "file": "frappe/tests/test_modules.py",
+    "class": "TestUtils",
+    "broad_area": "Dev-tooling",
+    "sub_area": "export_module_json, export_customizations (with module filter), sync_customizations, trim_table for dev-mode doctype export/sync",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests developer-mode tooling for exporting doctype JSON and customizations to disk; ferro has no module export/sync capability and this is firmly out of scope for the REST runtime."
+  },
+  {
+    "file": "frappe/tests/test_monitor.py",
+    "class": "TestMonitor",
+    "broad_area": "Framework-internal",
+    "sub_area": "frappe.monitor: request/job tracing to Redis, flush to log file, trace_id injection into SQL",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "Tests the Python monitor/tracing subsystem that writes to Redis and log files; ferro has no equivalent monitoring pipeline (its realtime.rs is an in-process socket.io replacement, not a request monitor), so this is out of scope."
+  },
+  {
+    "file": "frappe/tests/test_naming.py",
+    "class": "TestNaming",
+    "broad_area": "Naming",
+    "sub_area": "autoname rules: field, format (date parts, consecutive week, expression), hash, UUID v7, naming_series prefix/validation, revert_series, cancelled/amended naming, custom parser hook, append_number_if_name_exists",
+    "exercises_ferro": "in-process-only",
+    "tier": "1:1",
+    "ferro_covers": "partial",
+    "rationale": "Naming is a core contract ferro reimplements in naming.rs (naming_series, field:, format:, hash, expression); these in-process tests encode the exact behaviors ferro must replicate when generating names on insert — ferro covers common patterns but UUID v7 and custom parser hooks are gaps."
+  },
+  {
+    "file": "frappe/tests/test_nestedset.py",
+    "class": "TestNestedSet",
+    "broad_area": "DocType-feature",
+    "sub_area": "NestedSet tree: lft/rgt integrity, move, delete, rebuild_tree, merge, recursion guard, descendants-of filter, disabled records in treeview",
+    "exercises_ferro": "in-process-only",
+    "tier": "shouldnt-care",
+    "ferro_covers": "no",
+    "rationale": "NestedSet is a Python-level DocType feature (lft/rgt tree maintenance on save/delete) with no direct ferro analogue; ferro's ORM does not implement tree maintenance hooks, so these tests are out of scope for the pure-Rust build."
+  },
+  {
+    "file": "frappe/tests/test_non_nullable_docfield.py",
+    "class": "TestNonNullableDocfield",
+    "broad_area": "Meta-Schema",
+    "sub_area": "not_nullable DocField: default empty string on insert, DDL column constraint change via DocType save",
+    "exercises_ferro": "in-process-only",
+    "tier": "somewhat",
+    "ferro_covers": "partial",
+    "rationale": "Tests the not_nullable DocField attribute's effect on DB schema (DDL) and insert default values; ferro's schema.rs handles DDL during install/migrate but not_nullable column semantics at runtime insert are not explicitly implemented, so partial coverage at best."
+  }
+]
