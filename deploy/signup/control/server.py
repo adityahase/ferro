@@ -60,6 +60,7 @@ LOG_DIR     = envv("FERRO_LOG_DIR", "/opt/ferro/logs")
 # reflects the apps the user chose (build_db.py imports DocType *schema* only).
 ASSETS_DIR  = envv("FERRO_ASSETS", "/opt/ferro/assets")
 IMPORTER    = envv("FERRO_IMPORTER", "/opt/ferro/bin/import-workspaces.py")
+IMPORTER_DASH = envv("FERRO_IMPORTER_DASH", "/opt/ferro/bin/import-dashboards.py")
 DESK_ENABLED = os.path.isdir(ASSETS_DIR)
 
 # Fire-and-forget Desk methods with no meaningful return value that the pure-Rust runtime
@@ -387,6 +388,23 @@ def import_workspaces(forge, host, apps):
     rc, _out = sh(cmd, timeout=120)
     return rc == 0
 
+def import_dashboards(forge, host, apps):
+    """Materialise the installed apps' Number Card + Dashboard Chart fixtures so the workspace
+    dashboards (the number boxes and charts atop each section) render — the Desk widgets
+    with_doc() these by name and show nothing if the record is missing. Best-effort."""
+    if not os.path.exists(IMPORTER_DASH):
+        return False
+    db = site_db_path(forge, host)
+    if not db:
+        return False
+    cmd = ["python3", IMPORTER_DASH, "--db", db]
+    for a in apps:
+        appdir = os.path.join(APP_MIRROR, a)
+        if os.path.isdir(appdir):
+            cmd += ["--app-dir", appdir]
+    rc, _out = sh(cmd, timeout=120)
+    return rc == 0
+
 def set_site_config(forge, host, **keys):
     """Merge keys into the tenant's site_config.json (best-effort)."""
     cfgp = os.path.join(forge, "sites", host, "site_config.json")
@@ -488,6 +506,12 @@ def provision(sub, apps):
                 _ok(s, "app workspaces added to Desk")
             else:
                 _ok(s, "core Desk workspaces ready")
+
+            s = _step(job, "dashboards", "adding workspace number cards + charts")
+            if import_dashboards(forge, host, apps):
+                _ok(s, "number cards + charts added")
+            else:
+                _ok(s, "core dashboards ready")
 
             # Apps with real Python (SPA APIs, ERPNext controllers/setup) need the ferrod tier so
             # /api/method/<app>.* runs real controllers; lazy CPython boot keeps it cheap. The

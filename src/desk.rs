@@ -1136,8 +1136,24 @@ fn method_number_card_result(con: &Connection, metas: &MetaCache, user: &str, ar
         .and_then(|s| serde_json::from_str::<Value>(s).ok())
         .or_else(|| args.get("filters").and_then(|s| serde_json::from_str::<Value>(s).ok()))
         .unwrap_or(Value::Null);
-    match orm::count(con, &meta, &filters, owner_scope.as_deref()) {
-        Ok(n) => message(json!(n)),
+    // function: Count -> row count; Sum/Average/Minimum/Maximum -> aggregate over
+    // `aggregate_function_based_on` (the field the card sums/averages). Default to Count.
+    let func = card.get("function").and_then(|v| v.as_str()).unwrap_or("Count");
+    if func == "Count" {
+        return match orm::count(con, &meta, &filters, owner_scope.as_deref()) {
+            Ok(n) => message(json!(n)),
+            Err(_) => message(json!(0)),
+        };
+    }
+    let field = card
+        .get("aggregate_function_based_on")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if field.is_empty() {
+        return message(json!(0));
+    }
+    match orm::aggregate(con, &meta, func, field, &filters, owner_scope.as_deref()) {
+        Ok(v) => message(json!(v)),
         Err(_) => message(json!(0)),
     }
 }

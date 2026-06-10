@@ -18,6 +18,7 @@ install -m755 "$SRC/bin/run-instance.sh"          "$ROOT/bin/run-instance.sh"
 install -m755 "$SRC/bin/reap.sh"                  "$ROOT/bin/reap.sh"
 install -m755 "$SRC/bin/install-wildcard-cert.sh" "$ROOT/bin/install-wildcard-cert.sh"
 install -m755 "$SRC/bin/import-workspaces.py"     "$ROOT/bin/import-workspaces.py"
+install -m755 "$SRC/bin/import-dashboards.py"     "$ROOT/bin/import-dashboards.py"
 chmod +x "$ROOT/stack/bin/ferro" 2>/dev/null || true
 
 echo "==> Desk preflight"

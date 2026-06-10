@@ -1218,3 +1218,56 @@ pub fn count(
     let n: i64 = con.query_row(&sql, rusqlite::params_from_iter(binds.iter()), |r| r.get(0))?;
     Ok(n)
 }
+
+/// Aggregate (`SUM`/`AVG`/`MIN`/`MAX`) of `field` over rows matching `filters`, with optional
+/// if_owner scoping — backs the Number Card "Sum"/"Average"/"Minimum"/"Maximum" functions. Returns
+/// 0.0 when no rows match (COALESCE), matching `flt(None) == 0` on the Frappe side.
+pub fn aggregate(
+    con: &Connection,
+    meta: &Meta,
+    func: &str,
+    field: &str,
+    filters: &Value,
+    owner_scope: Option<&str>,
+) -> Result<f64, OrmError> {
+    let sqlfn = match func {
+        "Sum" => "SUM",
+        "Average" => "AVG",
+        "Minimum" => "MIN",
+        "Maximum" => "MAX",
+        _ => return Err(OrmError::Validation(format!("unsupported aggregate function {func}"))),
+    };
+    if !meta.has_column(field) {
+        return Err(OrmError::Validation(format!(
+            "unknown aggregate field '{field}' for {}",
+            meta.name
+        )));
+    }
+    let acl = ReadAcl::all();
+    let mut where_parts = Vec::new();
+    let mut binds: Vec<SqlValue> = Vec::new();
+    if let Some(owner) = owner_scope {
+        if meta.has_column("owner") {
+            where_parts.push(format!("{} = ?", quote_ident("owner")));
+            binds.push(SqlValue::Text(owner.to_string()));
+        }
+    }
+    for c in parse_filters(meta, &acl, filters)? {
+        where_parts.push(c.sql);
+        binds.extend(c.binds);
+    }
+    let where_clause = if where_parts.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", where_parts.join(" AND "))
+    };
+    let sql = format!(
+        "SELECT COALESCE({}({}), 0) FROM {}{}",
+        sqlfn,
+        quote_ident(field),
+        quote_ident(&meta.table),
+        where_clause
+    );
+    let v: f64 = con.query_row(&sql, rusqlite::params_from_iter(binds.iter()), |r| r.get(0))?;
+    Ok(v)
+}
