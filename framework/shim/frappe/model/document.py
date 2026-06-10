@@ -232,6 +232,25 @@ class Document(BaseDocument):
     def save(self, ignore_permissions=False, ignore_version=False, **k):
         if self.is_new():
             return self.insert(**k)
+        # Snapshot the pre-save DB version so controllers' get_doc_before_save() /
+        # has_value_changed() / get_value_before_save() work during validate (real Frappe loads this
+        # before running save hooks). Loaded as a controller so child tables stay attribute- and
+        # .get()-accessible. Best-effort: a failure just leaves the snapshot absent (prior behaviour).
+        if self.__dict__.get("_doc_before_save") is None and _rt is not None:
+            try:
+                import frappe as _f
+                before = _f.get_doc(self.get("doctype"), self.get("name"))
+                # Child tables aren't always materialised on a plain load; default them to [] so
+                # controllers iterating get_doc_before_save().get("<table>") don't hit None.
+                try:
+                    for tf in _f.get_meta(self.get("doctype")).get_table_fields():
+                        if before.get(tf.get("fieldname")) is None:
+                            before.set(tf.get("fieldname"), [])
+                except Exception:
+                    pass
+                self.__dict__["_doc_before_save"] = before
+            except Exception:
+                pass
         for m in ("before_validate", "validate", "before_save"):
             self.run_method(m)
         data = self.as_dict()

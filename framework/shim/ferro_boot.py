@@ -390,6 +390,39 @@ def _scan_whitelisted(app):
     return out
 
 
+def run_after_install(apps_json):
+    """Run each app's `after_install` hook (crm.install.after_install, …) so the app's master/seed
+    data exists — default statuses, fields layouts, industries, etc. ferro's native install-app
+    materialises DocType *schema* only, so without this the app's frontends crash on the missing
+    seed data (e.g. CRM's status badges read .name of an absent CRM Lead Status). Runs under the
+    embedded interpreter with the request connection set, so frappe.get_doc(...).insert() writes to
+    the real SQLite site. Returns a JSON summary."""
+    apps = json.loads(apps_json) if apps_json else []
+    done, errors = [], []
+    for app in apps:
+        try:
+            mod = importlib.import_module(f"{app}.hooks")
+        except Exception as e:
+            errors.append(f"{app}.hooks: {e}")
+            continue
+        hook = getattr(mod, "after_install", None)
+        if not hook:
+            continue
+        for dotted in ([hook] if isinstance(hook, str) else list(hook)):
+            fn = _resolve(dotted)
+            if fn is None:
+                errors.append(f"{dotted}: not resolvable")
+                continue
+            try:
+                fn()
+                done.append(dotted)
+            except Exception as e:
+                if os.environ.get("FERRO_TRACE"):
+                    traceback.print_exc()
+                errors.append(f"{dotted}: {type(e).__name__}: {e}")
+    return json.dumps({"ran": done, "errors": errors})
+
+
 def whitelisted_methods_json():
     """The map ferro pulls at boot to gate auto-routing. Sorted list of dotted paths."""
     return json.dumps(sorted(_WHITELISTED))
