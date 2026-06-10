@@ -1,5 +1,17 @@
 """frappe.db — the database facade, delegating to the native ferro_rt (ferro's SQLite ORM)."""
 import json as _json
+import re as _re
+
+
+def _translate_placeholders(q):
+    """Frappe/MySQL raw-SQL placeholders -> SQLite positional '?'. `%(key)s` and bare `%s` both
+    become '?'; a literal `%%` stays `%`. (ferro_rt.sql speaks SQLite, which uses '?'.)"""
+    if "%" not in q:
+        return q
+    q = q.replace("%%", "\x00")  # protect a literal percent
+    q = _re.sub(r"%\(\w+\)s", "?", q)  # named -> positional (values emitted in placeholder order)
+    q = q.replace("%s", "?")
+    return q.replace("\x00", "%")
 
 
 class Database:
@@ -109,19 +121,73 @@ class Database:
     def sql(self, query, values=None, as_dict=False, as_list=False, **kwargs):
         if hasattr(query, "get_sql"):
             query = query.get_sql()
+        query = str(query)
         params = None
+        named = False
         if values is not None:
             if isinstance(values, (list, tuple)):
                 params = _json.dumps(list(values))
             elif isinstance(values, dict):
-                params = _json.dumps(list(values.values()))
+                # Named params: %(key)s -> :key; ferro_rt binds positionally, so emit values in the
+                # order the placeholders appear.
+                import re as _re
+                order = [m.group(1) for m in _re.finditer(r"%\((\w+)\)s", query)]
+                if order:
+                    params = _json.dumps([values.get(k) for k in order])
+                    named = True
+                else:
+                    params = _json.dumps(list(values.values()))
             else:
                 params = _json.dumps([values])
-        rows = self._rt.sql(str(query), params, bool(as_dict))
+        # Translate Frappe/MySQL placeholders to SQLite's positional '?': %(key)s and bare %s.
+        # (Real frappe accepts both; ferro_rt.sql speaks SQLite.) A literal %% stays %.
+        query = _translate_placeholders(query)
+        rows = self._rt.sql(query, params, bool(as_dict))
         if as_dict:
             from frappe import _dict
             return [_dict(r) for r in rows]
         return rows
+
+    # ---- global / per-parent defaults (tabDefaultValue) ----
+    def _defaults(self, parent="__default"):
+        out = {}
+        try:
+            rows = self._rt.sql(
+                'SELECT defkey, defvalue FROM "tabDefaultValue" WHERE parent=?',
+                _json.dumps([parent]), True
+            )
+            for r in rows:
+                out[r.get("defkey")] = r.get("defvalue")
+        except Exception:
+            pass
+        return out
+
+    def get_default(self, key, parent="__default"):
+        return self._defaults(parent).get(key)
+
+    def get_defaults(self, key=None, parent="__default"):
+        d = self._defaults(parent)
+        return d.get(key) if key else d
+
+    def set_default(self, key, value, parent="__default", parenttype="__default"):
+        # Upsert a DefaultValue. Best-effort: app validate hooks call this and must not crash, but a
+        # default not persisting is harmless (it's a UI convenience value).
+        try:
+            import frappe
+            self._rt.sql('DELETE FROM "tabDefaultValue" WHERE parent=? AND defkey=?',
+                         _json.dumps([parent, key]), False)
+            name = frappe.generate_hash(length=10)
+            self._rt.sql(
+                'INSERT INTO "tabDefaultValue" (name, parent, parenttype, parentfield, defkey, defvalue) '
+                'VALUES (?,?,?,?,?,?)',
+                _json.dumps([name, parent, parenttype, "system_defaults", key, str(value) if value is not None else None]),
+                False,
+            )
+        except Exception:
+            pass
+
+    set_global_default = set_default
+    add_default = set_default
 
     def get_descendants(self, doctype, name):
         return []

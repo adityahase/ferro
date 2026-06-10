@@ -28,6 +28,23 @@ class BaseDocument:
             raise AttributeError(key)
         return None
 
+    # `doc.flags` is a mutable namespace controllers freely mutate (doc.flags.ignore_mandatory =
+    # True). A property (data descriptor) guarantees it's always a frappe._dict, even if a field
+    # named "flags" got written into __dict__ by a set()/update() — attribute assignment then works.
+    @property
+    def flags(self):
+        f = self.__dict__.get("_flags")
+        if not isinstance(f, dict):
+            from frappe import _dict
+            f = _dict()
+            self.__dict__["_flags"] = f
+        return f
+
+    @flags.setter
+    def flags(self, value):
+        from frappe import _dict
+        self.__dict__["_flags"] = value if isinstance(value, dict) else _dict()
+
     def get(self, key, default=None, filters=None):
         if isinstance(key, dict):
             # get(filters) over a child table is uncommon; return matching children
