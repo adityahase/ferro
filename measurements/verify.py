@@ -73,7 +73,16 @@ def setup():
     # Custom DocPerm: Note read+create if_owner for Ferro Test (overrides tabDocPerm -> if_owner-only)
     ex("DELETE FROM \"tabCustom DocPerm\" WHERE parent IN ('Note','User') AND role='Ferro Test'")
     ex("INSERT INTO \"tabCustom DocPerm\" (name,creation,modified,owner,modified_by,parent,role,permlevel,\"read\",\"write\",\"create\",\"delete\",if_owner) "
-       "VALUES ('frt-cdp-note',datetime('now'),datetime('now'),'Administrator','Administrator','Note','Ferro Test',0,1,0,1,0,1)")
+       "VALUES ('frt-cdp-note',datetime('now'),datetime('now'),'Administrator','Administrator','Note','Ferro Test',0,1,1,1,0,1)")
+    # permlevel-1 Custom Field on Note (+ column) for write-path masking test.
+    ex("ALTER TABLE tabNote ADD COLUMN note_secret TEXT")
+    ex("DELETE FROM \"tabCustom Field\" WHERE name='frt-notecf'")
+    ex("INSERT INTO \"tabCustom Field\" (name,creation,modified,owner,modified_by,dt,fieldname,label,fieldtype,permlevel,idx) "
+       "VALUES ('frt-notecf',datetime('now'),datetime('now'),'Administrator','Administrator','Note','note_secret','Secret','Data',1,98)")
+    # DocShare: share a Role (which Ferro Test otherwise cannot read) with ferro_test.
+    ex("DELETE FROM tabDocShare WHERE name='frt-share'")
+    ex("INSERT INTO tabDocShare (name,creation,modified,owner,modified_by,user,share_doctype,share_name,\"read\",\"write\") "
+       "VALUES ('frt-share',datetime('now'),datetime('now'),'Administrator','Administrator','ferro_test@example.com','Role','System Manager',1,0)")
     # Custom DocPerm: User read permlevel 0 for Ferro Test (to test permlevel masking)
     ex("INSERT INTO \"tabCustom DocPerm\" (name,creation,modified,owner,modified_by,parent,role,permlevel,\"read\") "
        "VALUES ('frt-cdp-user',datetime('now'),datetime('now'),'Administrator','Administrator','User','Ferro Test',0,1)")
@@ -116,9 +125,11 @@ def cleanup():
         "DELETE FROM tabRole WHERE name='Ferro Test'",
         "DELETE FROM tabToDo WHERE description LIKE 'ferro-verify-%'",
         "DELETE FROM \"tabConsole Log\" WHERE type='y'",
-        "DELETE FROM \"tabCustom Field\" WHERE name='frt-cf-1'",
+        "DELETE FROM \"tabCustom Field\" WHERE name IN ('frt-cf-1','frt-notecf')",
         "DELETE FROM \"tabProperty Setter\" WHERE name IN ('frt-ps-1','frt-soo')",
+        "DELETE FROM tabDocShare WHERE name='frt-share'",
         "ALTER TABLE tabToDo DROP COLUMN ferro_cf",
+        "ALTER TABLE tabNote DROP COLUMN note_secret",
         "DELETE FROM tabToDo WHERE description LIKE 'ferro-link-%' OR description LIKE 'ferro-olock-%' OR description LIKE 'ferro-soo-%'",
     ]:
         try: cur.execute(s)
@@ -230,6 +241,20 @@ def run_tests():
     check("if_owner list shows ONLY own rows", s==200 and owners=={"ferro_test@example.com"}, f"{s} owners={owners}")
     s,b = req("GET",'/api/resource/Note?fields=["name","owner"]&limit_page_length=0', user=ADMIN)
     check("admin list shows all Notes", s==200 and len(b.get("data",[]))>=2, f"{s} n={len(b.get('data',[]))}")
+
+    print("\n[write-path permlevel mask + DocShare]")
+    # write-mask: a permlevel-0 writer's attempt to set a permlevel-1 field is dropped (not written).
+    s,b = req("POST","/api/resource/Note", {"title":"ferro-note-wm","note_secret":"LEAK"}, token=TTOK)
+    wmname = b.get("data",{}).get("name")
+    check("permlevel-0 writer can create (if_owner)", s==200, f"{s} {b}")
+    s,b = req("GET", f"/api/resource/Note/{wmname}", user=ADMIN)
+    check("permlevel-1 field was masked on write (stays null)", b.get("data",{}).get("note_secret") is None, f"got {b.get('data',{}).get('note_secret')!r}")
+    # DocShare: a doc the user cannot read by role becomes readable when shared.
+    s,b = req("GET","/api/resource/Role/System Manager", token=TTOK)
+    # frt-share grants read; without it this would be 403.
+    check("DocShare grants read on a shared doc (under-grant fix)", s==200 and b.get("data",{}).get("name")=="System Manager", f"{s} {b}")
+    s,b = req("GET","/api/resource/Role/Guest", token=TTOK)
+    check("a non-shared doc of the same type is still 403", s==403, f"{s} {b}")
 
     print("\n[insert: naming]")
     s,b = req("POST","/api/resource/Discussion Topic", {"title":"ferro topic"}, user=ADMIN)

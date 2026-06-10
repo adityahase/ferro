@@ -1274,10 +1274,11 @@ fn route_v2_document(
             }
         }
         ("POST", None) => {
-            let data = match build_doc_data(content_type, body, params) {
+            let mut data = match build_doc_data(content_type, body, params) {
                 Ok(d) => d,
                 Err(e) => return err_v2(dev, 417, "ValidationError", e),
             };
+            mask_unwritable(con, &meta, &ident.user, &mut data); // write-path permlevel masking
             match orm::insert(con, &meta, &acl, &data, &ident.user) {
                 Ok(doc) => {
                     let nm = doc.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -1292,10 +1293,11 @@ fn route_v2_document(
             if owner_violation(&n) {
                 return err_v2(dev, 403, "PermissionError", format!("No permission for {} {n}", meta.name));
             }
-            let data = match build_doc_data(content_type, body, params) {
+            let mut data = match build_doc_data(content_type, body, params) {
                 Ok(d) => d,
                 Err(e) => return err_v2(dev, 417, "ValidationError", e),
             };
+            mask_unwritable(con, &meta, &ident.user, &mut data); // write-path permlevel masking
             match orm::update(con, &meta, &acl, &n, &data, &ident.user) {
                 Ok(doc) => {
                     let modified = doc.get("modified").and_then(|v| v.as_str()).unwrap_or("");
@@ -1772,12 +1774,22 @@ fn route_resource(
     let ptype = auth::ptype_for_method(method);
     let perm = auth::permission(con, &meta, &ident.user, ptype);
     if !perm.allowed {
-        return err(
-            dev,
-            403,
-            "PermissionError",
-            format!("No '{ptype}' permission for {} on {doctype}", ident.user),
-        );
+        // DocShare: a document explicitly shared with the user grants access to that single doc even
+        // without a role grant (Frappe under-grant fix). Reads need a read-share, writes a write-share;
+        // creates (no name) can't be share-granted. Lists still require a role grant.
+        let share_ptype = if method == "GET" { "read" } else { "write" };
+        let shared = name
+            .as_deref()
+            .map(|n| auth::doc_shared(con, &doctype, n, &ident.user, share_ptype))
+            .unwrap_or(false);
+        if !shared {
+            return err(
+                dev,
+                403,
+                "PermissionError",
+                format!("No '{ptype}' permission for {} on {doctype}", ident.user),
+            );
+        }
     }
     let acl = ReadAcl {
         permlevels: auth::readable_permlevels(con, &meta, &ident.user),
@@ -1828,10 +1840,11 @@ fn route_resource(
             }
         }
         ("POST", None) => {
-            let data = match build_doc_data(content_type, body, params) {
+            let mut data = match build_doc_data(content_type, body, params) {
                 Ok(d) => d,
                 Err(e) => return err(dev, 417, "ValidationError", e),
             };
+            mask_unwritable(con, &meta, &ident.user, &mut data); // write-path permlevel masking
             match orm::insert(con, &meta, &acl, &data, &ident.user) {
                 Ok(doc) => {
                     let name = doc.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -1846,10 +1859,11 @@ fn route_resource(
             if owner_violation(&n) {
                 return err(dev, 403, "PermissionError", format!("No permission for {} {n}", meta.name));
             }
-            let data = match build_doc_data(content_type, body, params) {
+            let mut data = match build_doc_data(content_type, body, params) {
                 Ok(d) => d,
                 Err(e) => return err(dev, 417, "ValidationError", e),
             };
+            mask_unwritable(con, &meta, &ident.user, &mut data); // write-path permlevel masking
             match orm::update(con, &meta, &acl, &n, &data, &ident.user) {
                 Ok(doc) => {
                     let modified = doc.get("modified").and_then(|v| v.as_str()).unwrap_or("");
@@ -2006,6 +2020,15 @@ fn build_list_query(params: &HashMap<String, String>) -> ListQuery {
 /// Build the document payload for create/update, mirroring Frappe's get_request_form_data +
 /// make_form_dict: accept JSON or form-urlencoded bodies, honor the `data` field, and merge
 /// query params (query first, body overrides). `doctype` is dropped.
+/// Write-path permlevel masking: drop payload fields whose docfield permlevel the user may not
+/// write (Frappe applies field-level write permissions before save). Admin (None) is a no-op;
+/// permlevel-0 fields and non-field keys (name/__islocal/…) are always kept.
+fn mask_unwritable(con: &Connection, meta: &meta::Meta, user: &str, data: &mut Map<String, Value>) {
+    if let Some(set) = auth::writable_permlevels(con, meta, user) {
+        data.retain(|k, _| set.contains(&meta.field(k).map(|f| f.permlevel).unwrap_or(0)));
+    }
+}
+
 fn build_doc_data(
     content_type: Option<&str>,
     body: &str,

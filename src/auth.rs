@@ -393,6 +393,59 @@ pub fn delete_session(con: &Connection, sid: &str) {
     let _ = con.execute("DELETE FROM \"tabSessions\" WHERE sid=?1", [sid]);
 }
 
+/// The set of permlevels the user may WRITE for this doctype. `None` ⇒ all (Administrator).
+/// Mirrors `readable_permlevels` but on the `write` column; used to drop fields a user can't write
+/// at their permlevel before they reach the ORM (write-path permlevel masking).
+pub fn writable_permlevels(con: &Connection, meta: &Meta, user: &str) -> Option<HashSet<i64>> {
+    if user == "Administrator" {
+        return None;
+    }
+    let roles = user_roles(con, user);
+    let placeholders = vec!["?"; roles.len()].join(",");
+    let table = perm_table(con, meta);
+    let sql = format!(
+        "SELECT DISTINCT COALESCE(permlevel,0) FROM \"{table}\" \
+         WHERE parent=? AND COALESCE(\"write\",0)=1 AND role IN ({placeholders})"
+    );
+    let mut binds: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(roles.len() + 1);
+    let dt = &meta.name;
+    binds.push(dt);
+    for r in &roles {
+        binds.push(r);
+    }
+    let mut set = HashSet::new();
+    if let Ok(mut stmt) = con.prepare(&sql) {
+        if let Ok(rows) = stmt.query_map(binds.as_slice(), |r| r.get::<_, i64>(0)) {
+            for r in rows.flatten() {
+                set.insert(r);
+            }
+        }
+    }
+    set.insert(0); // permlevel-0 fields are writable when write is granted at all
+    Some(set)
+}
+
+/// True iff `user` has a DocShare row granting `ptype` ("read"/"write") on (doctype, name).
+/// DocShare grants per-document access beyond role perms (Frappe under-grant fix).
+pub fn doc_shared(con: &Connection, doctype: &str, name: &str, user: &str, ptype: &str) -> bool {
+    if user == "Guest" {
+        return false;
+    }
+    let col = match ptype {
+        "write" | "share" | "submit" => ptype,
+        _ => "read",
+    };
+    con.query_row(
+        &format!(
+            "SELECT 1 FROM \"tabDocShare\" \
+             WHERE user=?1 AND share_doctype=?2 AND share_name=?3 AND COALESCE(\"{col}\",0)=1 LIMIT 1"
+        ),
+        rusqlite::params![user, doctype, name],
+        |_| Ok(true),
+    )
+    .unwrap_or(false)
+}
+
 /// Provision an API key pair for a user (sets tabUser.api_key, upserts __Auth secret as plaintext).
 pub fn provision_key(con: &Connection, user: &str) -> Result<(String, String), rusqlite::Error> {
     let key = crate::util::random_name();

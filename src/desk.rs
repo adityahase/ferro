@@ -1033,6 +1033,10 @@ fn persist_one(con: &Connection, metas: &MetaCache, user: &str, doc: &Value) -> 
         || name.is_empty()
         || name.starts_with("new-");
     let mut data: Map<String, Value> = obj.clone();
+    // Write-path permlevel masking: drop fields this user may not write at their permlevel.
+    if let Some(set) = auth::writable_permlevels(con, &meta, user) {
+        data.retain(|k, _| set.contains(&meta.field(k).map(|f| f.permlevel).unwrap_or(0)));
+    }
     let result = if is_new {
         // Drop the client's temporary "new-<doctype>-xxx" name so naming autogenerates a real one.
         data.remove("name");
