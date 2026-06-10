@@ -304,6 +304,25 @@ def run_tests():
     check("duplicate name -> 409 DuplicateEntryError", s==409 and b.get("exc_type")=="DuplicateEntryError", f"{s} {b}")
     req("DELETE","/api/resource/ToDo/FERRO-DUP-1", user=ADMIN)
 
+    print("\n[v2 bulk operations + copy (FIX-4, B-REST-3)]")
+    n1 = req("POST","/api/resource/ToDo", {"description":"ferro-verify-bulk1"}, user=ADMIN)[1].get("data",{}).get("name")
+    n2 = req("POST","/api/resource/ToDo", {"description":"ferro-verify-bulk2"}, user=ADMIN)[1].get("data",{}).get("name")
+    n3 = req("POST","/api/resource/ToDo", {"description":"ferro-verify-bulk3"}, user=ADMIN)[1].get("data",{}).get("name")
+    # copy: returns the doc without identity fields, marked local
+    s,b = req("GET", f"/api/v2/document/ToDo/{n1}/copy", user=ADMIN)
+    d = b.get("data",{})
+    check("v2 copy strips name + marks __islocal (B-REST-3)", s==200 and "name" not in d and d.get("description")=="ferro-verify-bulk1", f"{s} {d}")
+    # v2 document bulk_delete by names
+    s,b = req("POST","/api/v2/document/ToDo/bulk_delete", {"names":[n1,n2]}, user=ADMIN)
+    dd = b.get("data",{})
+    check("v2 document bulk_delete summary (FIX-4)", s==200 and dd.get("success_count")==2 and dd.get("failure_count")==0, f"{s} {b}")
+    # v2 method bulk_delete cross-doctype by docs
+    s,b = req("POST","/api/v2/method/bulk_delete", {"docs":[{"doctype":"ToDo","name":n3}]}, user=ADMIN)
+    check("v2 method bulk_delete cross-doctype (FIX-4)", s==200 and b.get("data",{}).get("success_count")==1, f"{s} {b}")
+    # invalid 'docs' -> 417 errors[]
+    s,b = req("POST","/api/v2/method/bulk_delete", {"docs":"notalist"}, user=ADMIN)
+    check("bulk_delete invalid 'docs' -> 417 errors[] (FIX-4)", s==417 and isinstance(b.get("errors"),list) and "must be a list" in json.dumps(b), f"{s} {b}")
+
     print("\n[form-encoded body + data field]")
     s,b = req("POST","/api/resource/ToDo", "description=ferro-verify-form&status=Open", user=ADMIN)
     check("form-urlencoded POST body parsed", s==200 and b.get("data",{}).get("description")=="ferro-verify-form", f"{s} {b}")

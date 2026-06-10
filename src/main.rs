@@ -1132,6 +1132,17 @@ fn route_v2_document(
         Err(meta::MetaError::Db(e)) => return map_orm_err_v2(dev, OrmError::Db(e)),
     };
 
+    // Trailing-segment operations on the document collection: bulk_delete (POST) and <name>/copy (GET).
+    if let Some(n) = &name {
+        if method == "POST" && n == "bulk_delete" {
+            return v2_bulk_delete_names(con, app, ident, &meta, body, params);
+        }
+        if method == "GET" && (n == "copy" || n.ends_with("/copy")) {
+            let src = n.strip_suffix("/copy").unwrap_or("").trim_end_matches('/').to_string();
+            return v2_copy_doc(con, app, ident, &meta, &src);
+        }
+    }
+
     let ptype = auth::ptype_for_method(method);
     let perm = auth::permission(con, &meta, &ident.user, ptype);
     if !perm.allowed {
@@ -1238,6 +1249,252 @@ fn route_v2_document(
     }
 }
 
+/// Human-readable message for an ORM error (per-item bulk failures).
+fn orm_err_text(e: &OrmError) -> String {
+    match e {
+        OrmError::NotFound(m) | OrmError::Validation(m) | OrmError::Duplicate(m) => m.clone(),
+        OrmError::Db(_) => "Internal Server Error".to_string(),
+    }
+}
+
+/// Pull a method argument by key from a JSON body (preferred) or the query params (JSON-encoded).
+fn v2_arg(body: &str, params: &HashMap<String, String>, key: &str) -> Value {
+    if let Ok(Value::Object(o)) = serde_json::from_str::<Value>(body) {
+        if let Some(v) = o.get(key) {
+            return v.clone();
+        }
+    }
+    params
+        .get(key)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .unwrap_or(Value::Null)
+}
+
+/// Coerce a bulk name element (string or integer) to a name string.
+fn name_elem(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// `/api/v2/document/<dt>/bulk_delete` (FIX-4): body `{"names":[...]}` → delete each within the one
+/// doctype, returning the {deleted,failed,total,success_count,failure_count} summary.
+fn v2_bulk_delete_names(
+    con: &Connection,
+    app: &App,
+    ident: &auth::Identity,
+    meta: &meta::Meta,
+    body: &str,
+    params: &HashMap<String, String>,
+) -> (u16, Value) {
+    let dev = app.dev;
+    let names = match v2_arg(body, params, "names") {
+        Value::Array(a) => a,
+        _ => return err_v2(dev, 417, "ValidationError", "'names' must be a list".into()),
+    };
+    let perm = auth::permission(con, meta, &ident.user, "delete");
+    if !perm.allowed {
+        return err_v2(dev, 403, "PermissionError", format!("No 'delete' permission for {} on {}", ident.user, meta.name));
+    }
+    let mut deleted = Vec::new();
+    let mut failed = Vec::new();
+    for nv in &names {
+        let n = match name_elem(nv) {
+            Some(n) => n,
+            None => {
+                failed.push(json!({"name": nv, "error": "'name' must be a string or integer"}));
+                continue;
+            }
+        };
+        if perm.only_if_owner {
+            if let Some(o) = orm::doc_owner(con, meta, &n) {
+                if !auth::owns(&o, &ident.user) {
+                    failed.push(json!({"name": n, "error": "PermissionError: not permitted"}));
+                    continue;
+                }
+            }
+        }
+        match orm::delete(con, meta, &n) {
+            Ok(()) => {
+                notify_write(app, &meta.name, &n, &ident.user, "");
+                deleted.push(json!(n));
+            }
+            Err(e) => failed.push(json!({"name": n, "error": orm_err_text(&e)})),
+        }
+    }
+    let total = deleted.len() + failed.len();
+    (200, json!({ "data": {
+        "deleted": deleted,
+        "failed": failed,
+        "total": total,
+        "success_count": deleted.len(),
+        "failure_count": failed.len(),
+    }}))
+}
+
+/// `/api/v2/document/<dt>/<name>/copy` (B-REST-3): return the source doc as a fresh copy — its
+/// identity/audit fields stripped — so the client can save it as a new document.
+fn v2_copy_doc(
+    con: &Connection,
+    app: &App,
+    ident: &auth::Identity,
+    meta: &meta::Meta,
+    src: &str,
+) -> (u16, Value) {
+    let dev = app.dev;
+    if src.is_empty() {
+        return err_v2(dev, 404, "DoesNotExistError", "No source name to copy".into());
+    }
+    let perm = auth::permission(con, meta, &ident.user, "read");
+    if !perm.allowed {
+        return err_v2(dev, 403, "PermissionError", format!("No 'read' permission for {} on {}", ident.user, meta.name));
+    }
+    if perm.only_if_owner {
+        if let Some(o) = orm::doc_owner(con, meta, src) {
+            if !auth::owns(&o, &ident.user) {
+                return err_v2(dev, 403, "PermissionError", format!("No permission for {} {src}", meta.name));
+            }
+        }
+    }
+    let acl = ReadAcl { permlevels: auth::readable_permlevels(con, meta, &ident.user) };
+    match orm::get_doc(con, meta, &acl, src) {
+        Ok(mut doc) => {
+            if let Value::Object(ref mut o) = doc {
+                for k in ["name", "owner", "creation", "modified", "modified_by", "docstatus"] {
+                    o.remove(k);
+                }
+                o.insert("__islocal".into(), json!(1));
+                o.insert("__unsaved".into(), json!(1));
+            }
+            (200, json!({ "data": doc }))
+        }
+        Err(e) => map_orm_err_v2(dev, e),
+    }
+}
+
+/// `/api/v2/method/bulk_delete` (FIX-4): cross-doctype delete. Body `{"docs":[{doctype,name}]}`.
+fn v2_method_bulk_delete(
+    con: &Connection,
+    app: &App,
+    ident: &auth::Identity,
+    body: &str,
+    params: &HashMap<String, String>,
+) -> (u16, Value) {
+    let dev = app.dev;
+    let docs = match v2_arg(body, params, "docs") {
+        Value::Array(a) => a,
+        _ => return err_v2(dev, 417, "ValidationError", "'docs' must be a list".into()),
+    };
+    let mut deleted = Vec::new();
+    let mut failed = Vec::new();
+    for d in &docs {
+        let dt = d.get("doctype").and_then(|v| v.as_str()).unwrap_or("");
+        let nm = d.get("name").and_then(name_elem_ref).unwrap_or_default();
+        if dt.is_empty() || nm.is_empty() {
+            failed.push(json!({"doctype": dt, "name": nm, "error": "doctype and name required"}));
+            continue;
+        }
+        let meta = match app.metas.get(con, dt) {
+            Ok(m) => m,
+            Err(_) => {
+                failed.push(json!({"doctype": dt, "name": nm, "error": format!("DocType {dt} not found")}));
+                continue;
+            }
+        };
+        let perm = auth::permission(con, &meta, &ident.user, "delete");
+        if !perm.allowed || (perm.only_if_owner && !owns_doc(con, &meta, &nm, &ident.user)) {
+            failed.push(json!({"doctype": dt, "name": nm, "error": "PermissionError: not permitted"}));
+            continue;
+        }
+        match orm::delete(con, &meta, &nm) {
+            Ok(()) => {
+                notify_write(app, &meta.name, &nm, &ident.user, "");
+                deleted.push(json!({"doctype": dt, "name": nm}));
+            }
+            Err(e) => failed.push(json!({"doctype": dt, "name": nm, "error": orm_err_text(&e)})),
+        }
+    }
+    let total = deleted.len() + failed.len();
+    (200, json!({ "data": {
+        "deleted": deleted, "failed": failed, "total": total,
+        "success_count": deleted.len(), "failure_count": failed.len(),
+    }}))
+}
+
+/// `/api/v2/method/bulk_update` (FIX-4, synchronous path): body `{"docs":[{doctype,name,...fields}]}`.
+fn v2_method_bulk_update(
+    con: &Connection,
+    app: &App,
+    ident: &auth::Identity,
+    body: &str,
+    params: &HashMap<String, String>,
+) -> (u16, Value) {
+    let dev = app.dev;
+    let docs = match v2_arg(body, params, "docs") {
+        Value::Array(a) => a,
+        _ => return err_v2(dev, 417, "ValidationError", "'docs' must be a list".into()),
+    };
+    let mut updated = Vec::new();
+    let mut failed = Vec::new();
+    for d in &docs {
+        let obj = match d.as_object() {
+            Some(o) => o,
+            None => {
+                failed.push(json!({"error": "each doc must be an object"}));
+                continue;
+            }
+        };
+        let dt = obj.get("doctype").and_then(|v| v.as_str()).unwrap_or("");
+        let nm = obj.get("name").and_then(name_elem_ref).unwrap_or_default();
+        if dt.is_empty() || nm.is_empty() {
+            failed.push(json!({"doctype": dt, "name": nm, "error": "doctype and name required"}));
+            continue;
+        }
+        let meta = match app.metas.get(con, dt) {
+            Ok(m) => m,
+            Err(_) => {
+                failed.push(json!({"doctype": dt, "name": nm, "error": format!("DocType {dt} not found")}));
+                continue;
+            }
+        };
+        let perm = auth::permission(con, &meta, &ident.user, "write");
+        if !perm.allowed || (perm.only_if_owner && !owns_doc(con, &meta, &nm, &ident.user)) {
+            failed.push(json!({"doctype": dt, "name": nm, "error": "PermissionError: not permitted"}));
+            continue;
+        }
+        let acl = ReadAcl { permlevels: auth::readable_permlevels(con, &meta, &ident.user) };
+        let mut data: Map<String, Value> = obj.clone();
+        data.remove("doctype");
+        data.remove("name");
+        match orm::update(con, &meta, &acl, &nm, &data, &ident.user) {
+            Ok(doc) => {
+                let modified = doc.get("modified").and_then(|v| v.as_str()).unwrap_or("");
+                notify_write(app, &meta.name, &nm, &ident.user, modified);
+                updated.push(json!({"doctype": dt, "name": nm}));
+            }
+            Err(e) => failed.push(json!({"doctype": dt, "name": nm, "error": orm_err_text(&e)})),
+        }
+    }
+    let total = updated.len() + failed.len();
+    (200, json!({ "data": {
+        "updated": updated, "failed": failed, "total": total,
+        "success_count": updated.len(), "failure_count": failed.len(),
+    }}))
+}
+
+fn name_elem_ref(v: &Value) -> Option<String> {
+    name_elem(v)
+}
+
+fn owns_doc(con: &Connection, meta: &meta::Meta, name: &str, user: &str) -> bool {
+    match orm::doc_owner(con, meta, name) {
+        Some(o) => auth::owns(&o, user),
+        None => true, // missing doc: let delete/update return its own NotFound
+    }
+}
+
 /// `/api/v2/doctype/<doctype>/{meta,count}` (B-REST-2). `meta` returns the serialized DocType meta
 /// (Frappe gates it on the "All" role → any authenticated user, i.e. not Guest); `count` returns the
 /// row count, gated on read permission like the resource path.
@@ -1311,6 +1568,9 @@ fn route_v2_method(
         "login" => return (200, json!({ "data": "Logged In" })),
         "logout" | "frappe.auth.logout" => return (200, json!({ "data": null })),
         "frappe.auth.get_logged_user" => return (200, json!({ "data": ident.user })),
+        // FIX-4: cross-doctype bulk operations (synchronous path).
+        "bulk_delete" | "frappe.client.bulk_delete" => return v2_method_bulk_delete(con, app, ident, body, params),
+        "bulk_update" | "frappe.client.bulk_update" => return v2_method_bulk_update(con, app, ident, body, params),
         _ => {}
     }
 
