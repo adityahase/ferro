@@ -27,6 +27,8 @@ pub struct DocField {
     pub reqd: bool,
     pub default: Option<String>,
     pub permlevel: i64,
+    /// `set_only_once`: the value may be set on insert but never changed on update.
+    pub set_only_once: bool,
 }
 
 impl DocField {
@@ -99,6 +101,13 @@ impl From<rusqlite::Error> for MetaError {
     }
 }
 
+/// Load a DocType's metadata directly from the site DB, bypassing the cache. Used where a Meta is
+/// needed transiently (e.g. naming/validating child-table rows during a write) without a MetaCache
+/// handle in scope.
+pub fn load_uncached(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
+    load_meta(con, doctype)
+}
+
 /// Load a DocType's metadata directly from the site DB.
 fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
     // 1. DocType row.
@@ -135,7 +144,7 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
     {
         let mut stmt = con.prepare(
             "SELECT fieldname, COALESCE(fieldtype,'Data'), options, \
-             COALESCE(reqd,0), \"default\", COALESCE(permlevel,0) \
+             COALESCE(reqd,0), \"default\", COALESCE(permlevel,0), COALESCE(set_only_once,0) \
              FROM \"tabDocField\" WHERE parent = ?1 ORDER BY idx",
         )?;
         let rows = stmt.query_map([doctype], |r| {
@@ -146,6 +155,7 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
                 reqd: r.get::<_, Option<i64>>(3)?.unwrap_or(0) != 0,
                 default: r.get::<_, Option<String>>(4)?,
                 permlevel: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
+                set_only_once: r.get::<_, Option<i64>>(6)?.unwrap_or(0) != 0,
             })
         })?;
         for f in rows {
@@ -162,7 +172,7 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
     //     Field runs a schema migration), so this only adds the field METADATA.
     if let Ok(mut stmt) = con.prepare(
         "SELECT fieldname, COALESCE(fieldtype,'Data'), options, \
-         COALESCE(reqd,0), \"default\", COALESCE(permlevel,0) \
+         COALESCE(reqd,0), \"default\", COALESCE(permlevel,0), COALESCE(set_only_once,0) \
          FROM \"tabCustom Field\" WHERE dt = ?1 ORDER BY idx",
     ) {
         if let Ok(rows) = stmt.query_map([doctype], |r| {
@@ -173,6 +183,7 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
                 reqd: r.get::<_, Option<i64>>(3)?.unwrap_or(0) != 0,
                 default: r.get::<_, Option<String>>(4)?,
                 permlevel: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
+                set_only_once: r.get::<_, Option<i64>>(6)?.unwrap_or(0) != 0,
             })
         }) {
             for f in rows.flatten() {
@@ -301,6 +312,7 @@ fn apply_property_setters(
                         "default" => df.default = value,
                         "reqd" => df.reqd = value.as_deref().map(|v| crate::util::cint(v) != 0).unwrap_or(false),
                         "permlevel" => df.permlevel = value.as_deref().map(crate::util::cint).unwrap_or(0),
+                        "set_only_once" => df.set_only_once = value.as_deref().map(|v| crate::util::cint(v) != 0).unwrap_or(false),
                         _ => {}
                     }
                 }

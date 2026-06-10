@@ -607,6 +607,81 @@ fn is_nonempty(v: &SqlValue) -> bool {
 
 const SYSTEM_INSERT_FIELDS: &[&str] = &["owner", "creation", "modified", "modified_by", "docstatus", "idx"];
 
+/// Render a SQL bind value as the text used for set_only_once equality comparison.
+fn sqlval_text(v: SqlValue) -> String {
+    match v {
+        SqlValue::Null => String::new(),
+        SqlValue::Integer(i) => i.to_string(),
+        SqlValue::Real(f) => f.to_string(),
+        SqlValue::Text(s) => s,
+        SqlValue::Blob(_) => String::new(),
+    }
+}
+
+/// Validate one Link / Dynamic Link value points at an existing document (Frappe's
+/// get_invalid_links → LinkValidationError, HTTP 417). Conservative: skips empty values, the
+/// "[Select]" pseudo-option, and targets whose table doesn't exist (Single/virtual/unknown).
+fn validate_link(
+    con: &Connection,
+    df: &DocField,
+    value: &Value,
+    siblings: &Map<String, Value>,
+) -> Result<(), OrmError> {
+    let v = match value {
+        Value::String(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return Ok(()),
+    };
+    let target = match df.fieldtype.as_str() {
+        "Link" => match df.options.as_deref() {
+            Some(o) if !o.is_empty() && o != "[Select]" => o.to_string(),
+            _ => return Ok(()),
+        },
+        // Dynamic Link: `options` names a sibling field holding the target doctype.
+        "Dynamic Link" => {
+            let key = match df.options.as_deref() {
+                Some(k) if !k.is_empty() => k,
+                _ => return Ok(()),
+            };
+            match siblings.get(key).and_then(|x| x.as_str()) {
+                Some(dt) if !dt.is_empty() => dt.to_string(),
+                _ => return Ok(()),
+            }
+        }
+        _ => return Ok(()),
+    };
+    let table = format!("tab{target}");
+    let table_exists: bool = con
+        .query_row("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1", [&table], |_| Ok(true))
+        .unwrap_or(false);
+    if !table_exists {
+        return Ok(());
+    }
+    let found: bool = con
+        .query_row(
+            &format!("SELECT 1 FROM {} WHERE {}=?1 LIMIT 1", quote_ident(&table), quote_ident("name")),
+            [&v],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if found {
+        Ok(())
+    } else {
+        Err(OrmError::Validation(format!("Could not find {target}: {v}")))
+    }
+}
+
+/// Validate every Link / Dynamic Link field present in `data` against `meta`.
+fn validate_links(con: &Connection, meta: &Meta, data: &Map<String, Value>) -> Result<(), OrmError> {
+    for f in &meta.fields {
+        if matches!(f.fieldtype.as_str(), "Link" | "Dynamic Link") {
+            if let Some(v) = data.get(&f.fieldname) {
+                validate_link(con, f, v, data)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// INSERT a new document. Returns the created doc.
 pub fn insert(
     con: &Connection,
@@ -709,6 +784,9 @@ pub fn insert(
             }
         }
 
+        // Link / Dynamic Link target existence (B-DOC-1).
+        validate_links(con, meta, data)?;
+
         let placeholders = vec!["?"; cols.len()].join(", ");
         let sql = format!(
             "INSERT INTO {} ({}) VALUES ({})",
@@ -762,12 +840,27 @@ fn insert_children(
         if child_cols.is_empty() {
             continue;
         }
+        // The child DocType's meta, loaded once per table — drives child autoname (B-NAM-2) and
+        // child Link validation (B-DOC-1). Optional: a missing child meta degrades to hash naming.
+        let child_meta = crate::meta::load_uncached(con, child_dt).ok();
         for (i, item) in rows.iter().enumerate() {
             let obj = match item.as_object() {
                 Some(o) => o,
                 None => continue,
             };
-            let cname = util::random_name();
+            // Validate this child row's Link fields against the child meta.
+            if let Some(cm) = &child_meta {
+                validate_links(con, cm, obj)?;
+            }
+            // Keep an existing/client-supplied child name (no rename-on-edit); otherwise apply the
+            // child DocType's autoname rule (Frappe's set_new_name), falling back to a hash.
+            let cname = match obj.get("name").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                Some(n) => n.trim().to_string(),
+                None => match &child_meta {
+                    Some(cm) => naming::resolve_name(con, cm, obj).unwrap_or_else(|_| util::random_name()),
+                    None => util::random_name(),
+                },
+            };
             let mut cols = vec![quote_ident("name")];
             let mut binds = vec![SqlValue::Text(cname)];
             let mut seen: HashSet<String> = ["name".to_string()].into_iter().collect();
@@ -851,6 +944,49 @@ pub fn update(
         if exists == 0 {
             return Err(OrmError::NotFound(format!("{} {}", meta.name, name)));
         }
+
+        // Optimistic concurrency (B-DOC-3): if the client sent `modified`, it must match the DB's,
+        // else the doc was changed after the client read it (Frappe's TimestampMismatchError, 417).
+        if let Some(client_mod) = data.get("modified").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+            let db_mod: Option<String> = con
+                .query_row(
+                    &format!("SELECT {} FROM {} WHERE {}=?1", quote_ident("modified"), quote_ident(&meta.table), quote_ident("name")),
+                    [name],
+                    |r| r.get(0),
+                )
+                .ok();
+            if let Some(dbm) = db_mod {
+                if dbm.trim() != client_mod.trim() {
+                    return Err(OrmError::Validation(format!(
+                        "Document has been modified after you have opened it ({} vs {}). Please refresh to get the latest document.",
+                        dbm.trim(), client_mod.trim()
+                    )));
+                }
+            }
+        }
+
+        // set_only_once (B-DOC-2): such a field's value may be set on insert but not changed.
+        for f in &meta.fields {
+            if !f.set_only_once || !meta.has_column(&f.fieldname) {
+                continue;
+            }
+            if let Some(new_v) = data.get(&f.fieldname) {
+                let cur: Option<String> = con
+                    .query_row(
+                        &format!("SELECT {} FROM {} WHERE {}=?1", quote_ident(&f.fieldname), quote_ident(&meta.table), quote_ident("name")),
+                        [name],
+                        |r| r.get::<_, Option<String>>(0),
+                    )
+                    .ok()
+                    .flatten();
+                if sqlval_text(json_to_sql(new_v)) != cur.unwrap_or_default() {
+                    return Err(OrmError::Validation(format!("Value cannot be changed for {}", f.fieldname)));
+                }
+            }
+        }
+
+        // Link / Dynamic Link target existence (B-DOC-1).
+        validate_links(con, meta, data)?;
 
         let now = util::now_datetime();
         let mut sets = Vec::new();

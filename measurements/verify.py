@@ -87,6 +87,10 @@ def setup():
     ex("DELETE FROM \"tabProperty Setter\" WHERE name='frt-ps-1'")
     ex("INSERT INTO \"tabProperty Setter\" (name,creation,modified,owner,modified_by,doc_type,doctype_or_field,field_name,property,property_type,value) "
        "VALUES ('frt-ps-1',datetime('now'),datetime('now'),'Administrator','Administrator','User','DocField','birth_date','permlevel','Int','1')")
+    # B-DOC-2: make ToDo.priority set_only_once via a Property Setter.
+    ex("DELETE FROM \"tabProperty Setter\" WHERE name='frt-soo'")
+    ex("INSERT INTO \"tabProperty Setter\" (name,creation,modified,owner,modified_by,doc_type,doctype_or_field,field_name,property,property_type,value) "
+       "VALUES ('frt-soo',datetime('now'),datetime('now'),'Administrator','Administrator','ToDo','DocField','priority','set_only_once','Check','1')")
     con.commit(); con.close()
 
 def cleanup():
@@ -101,8 +105,9 @@ def cleanup():
         "DELETE FROM tabToDo WHERE description LIKE 'ferro-verify-%'",
         "DELETE FROM \"tabConsole Log\" WHERE type='y'",
         "DELETE FROM \"tabCustom Field\" WHERE name='frt-cf-1'",
-        "DELETE FROM \"tabProperty Setter\" WHERE name='frt-ps-1'",
+        "DELETE FROM \"tabProperty Setter\" WHERE name IN ('frt-ps-1','frt-soo')",
         "ALTER TABLE tabToDo DROP COLUMN ferro_cf",
+        "DELETE FROM tabToDo WHERE description LIKE 'ferro-link-%' OR description LIKE 'ferro-olock-%' OR description LIKE 'ferro-soo-%'",
     ]:
         try: cur.execute(s)
         except Exception as e: print("  cleanup warn:", e)
@@ -241,6 +246,30 @@ def run_tests():
     check("DELETE returns 202 + {\"data\":\"ok\"}", s==202 and b.get("data")=="ok", f"{s} {b}")
     s,b = req("GET",f"/api/resource/ToDo/{todo_name}", user=ADMIN)
     check("deleted doc -> 404 DoesNotExistError", s==404 and b.get("exc_type")=="DoesNotExistError", f"{s} {b}")
+
+    print("\n[document lifecycle: links / set_only_once / optimistic lock (B-DOC-1/2/3)]")
+    # B-DOC-1: a non-empty Link to a missing target is rejected (LinkValidationError -> 417).
+    s,b = req("POST","/api/resource/ToDo", {"description":"ferro-link-bad","allocated_to":"nobody@nowhere.invalid"}, user=ADMIN)
+    check("Link to a missing target -> 417 (B-DOC-1)", s==417, f"{s} {b}")
+    s,b = req("POST","/api/resource/ToDo", {"description":"ferro-link-ok","allocated_to":"Administrator"}, user=ADMIN)
+    check("Link to an existing target -> 200 (B-DOC-1)", s==200, f"{s} {b}")
+    if s==200: req("DELETE", f"/api/resource/ToDo/{b['data']['name']}", user=ADMIN)
+    # B-DOC-3: optimistic concurrency on `modified`.
+    s,b = req("POST","/api/resource/ToDo", {"description":"ferro-olock-1"}, user=ADMIN)
+    ol_name = b.get("data",{}).get("name"); ol_mod = b.get("data",{}).get("modified")
+    s,b = req("PUT", f"/api/resource/ToDo/{ol_name}", {"status":"Closed","modified":ol_mod}, user=ADMIN)
+    check("update with current modified -> 200 (B-DOC-3)", s==200, f"{s} {b}")
+    s,b = req("PUT", f"/api/resource/ToDo/{ol_name}", {"status":"Open","modified":"2000-01-01 00:00:00.000000"}, user=ADMIN)
+    check("update with stale modified -> 417 TimestampMismatch (B-DOC-3)", s==417, f"{s} {b}")
+    if ol_name: req("DELETE", f"/api/resource/ToDo/{ol_name}", user=ADMIN)
+    # B-DOC-2: a set_only_once field (ToDo.priority via Property Setter) cannot change on update.
+    s,b = req("POST","/api/resource/ToDo", {"description":"ferro-soo-1","priority":"Low"}, user=ADMIN)
+    soo_name = b.get("data",{}).get("name")
+    s,b = req("PUT", f"/api/resource/ToDo/{soo_name}", {"priority":"High"}, user=ADMIN)
+    check("changing a set_only_once field -> 417 (B-DOC-2)", s==417, f"{s} {b}")
+    s,b = req("PUT", f"/api/resource/ToDo/{soo_name}", {"status":"Closed"}, user=ADMIN)
+    check("updating other fields with set_only_once unchanged -> 200 (B-DOC-2)", s==200, f"{s} {b}")
+    if soo_name: req("DELETE", f"/api/resource/ToDo/{soo_name}", user=ADMIN)
 
     print("\n[error shapes]")
     s,b = req("GET","/api/resource/NoSuchDoctype/x", user=ADMIN)
