@@ -328,7 +328,29 @@ fn build_boot(base: &str, site_name: &str, csrf: &str) -> Value {
         "csrf_token": csrf,
         "read_only_mode": false,
         "setup_complete": 1,
-        "sysdefaults": {},
+        "frappe_version": "16.0.0",
+        // sysdefaults MUST carry the formatting defaults: frappe-ui's date/number formatters read
+        // e.g. `window.sysdefaults.date_format.replace("mm","MM")` *without* a guard, so an empty
+        // sysdefaults makes every date cell throw "Cannot read properties of undefined (reading
+        // 'replace')" — which unmounts the whole list/form view (blank page). These are Frappe's
+        // stock defaults (mirroring the Desk boot snapshot's sysdefaults).
+        "sysdefaults": {
+            "date_format": "yyyy-mm-dd",
+            "time_format": "HH:mm:ss",
+            "number_format": "#,###.##",
+            "float_precision": 3,
+            "currency": "USD",
+            "currency_precision": "",
+            "first_day_of_the_week": "Sunday",
+            "rounding_method": "Banker's Rounding (legacy)",
+            "country": "",
+            "time_zone": "UTC",
+            "language": "en",
+            "use_number_format_from_currency": 0,
+            "hide_empty_read_only_fields": 1,
+            "enable_onboarding": "0",
+            "setup_complete": "1"
+        },
         "lang": "en",
         "system_timezone": "UTC",
         "timezone": { "system": "UTC", "user": "UTC" },
