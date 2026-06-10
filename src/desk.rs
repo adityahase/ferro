@@ -644,6 +644,7 @@ pub fn route_method(
         "frappe.desk.search.search_link" | "frappe.desk.search.search_widget" => {
             method_search_link(con, metas, user, &args)
         }
+        "frappe.client.get_doc_permissions" => method_get_doc_permissions(con, metas, user, &args),
         "frappe.client.get_count" | "frappe.desk.reportview.get_count" => {
             method_get_count(con, metas, user, &args)
         }
@@ -987,6 +988,26 @@ fn method_get_count(con: &Connection, metas: &MetaCache, user: &str, args: &Hash
         Ok(n) => message(json!(n)),
         Err(e) => map_orm_err(e),
     }
+}
+
+/// `frappe.client.get_doc_permissions` — `{"permissions": {read:1, write:1, …}}`. The detail/form
+/// view gates its buttons (edit/delete/submit) on this; a 404 throws. Doctype-level evaluation per
+/// ptype (Administrator → all allowed).
+fn method_get_doc_permissions(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+    let doctype = match args.get("doctype") {
+        Some(d) if !d.is_empty() => d.clone(),
+        _ => return message(json!({ "permissions": {} })),
+    };
+    let meta = match get_meta(metas, con, &doctype) {
+        Ok(m) => m,
+        Err(_) => return message(json!({ "permissions": {} })),
+    };
+    let mut perms = serde_json::Map::new();
+    for p in ["read", "write", "create", "delete", "submit", "cancel", "amend", "print", "email", "report", "import", "export", "share"] {
+        let ok = auth::permission(con, &meta, user, p).allowed;
+        perms.insert(p.to_string(), json!(if ok { 1 } else { 0 }));
+    }
+    message(json!({ "permissions": perms }))
 }
 
 /// `frappe.desk.search.search_link` / `search_widget` — the Link-field / global-search autosuggest.

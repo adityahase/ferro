@@ -10,6 +10,11 @@ class DocField(dict):
         return self.get(k)
     def __setattr__(self, k, v):
         self[k] = v
+    def as_dict(self, *a, **k):
+        # Return an attribute-accessible _dict: callers do field.as_dict() then access .fieldname /
+        # .fieldtype etc. (a plain dict would AttributeError).
+        import frappe
+        return frappe._dict(self)
 
 
 class Meta:
@@ -33,14 +38,27 @@ class Meta:
         self.is_virtual = raw.get("is_virtual", False)
         self.autoname = raw.get("autoname")
         self._fields = [DocField(f) for f in raw.get("fields", [])]
+        # Frappe auto-derives a field label from its fieldname when unset; mirror it so app code
+        # that does "..." + field.label + "..." (crm fields-layout) never hits None.
+        for f in self._fields:
+            if not f.get("label") and f.get("fieldname"):
+                f["label"] = str(f["fieldname"]).replace("_", " ").title()
         self._by_name = {f["fieldname"]: f for f in self._fields}
 
     @property
     def fields(self):
         return self._fields
 
-    def get(self, key, default=None):
-        return getattr(self, key, default)
+    def get(self, key, default=None, filters=None):
+        # Frappe semantics: meta.get("<child-table>", {filters}) returns the matching child rows
+        # (e.g. meta.get("fields", {"fieldname": "enabled"}) -> [] if there is no such field). The
+        # 2nd positional arg is the filter dict in that form, NOT a default. Callers rely on the
+        # empty-list-is-falsy result (crm.api.contact.search_emails).
+        flt = filters if isinstance(filters, dict) else (default if isinstance(default, dict) else None)
+        val = getattr(self, key, None)
+        if flt is not None and isinstance(val, list):
+            return [r for r in val if all((r.get(k) if hasattr(r, "get") else None) == v for k, v in flt.items())]
+        return val if val is not None else default
 
     def as_dict(self, no_nulls=False, *a, **k):
         # Return COPIES of the field dicts: callers (e.g. crm.api.doc.get_filterable_fields) mutate
