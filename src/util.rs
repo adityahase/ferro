@@ -38,6 +38,46 @@ pub fn day_of_year(y: i64, m: u32, d: u32) -> u32 {
     doy
 }
 
+/// Days since the unix epoch (1970-01-01) for a civil date — Howard Hinnant's `days_from_civil`.
+pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = (if y >= 0 { y } else { y - 399 }) / 400;
+    let yoe = y - era * 400; // [0, 399]
+    let mp = if m > 2 { m as i64 - 3 } else { m as i64 + 9 }; // [0, 11]
+    let doy = (153 * mp + 2) / 5 + d as i64 - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146_097 + doe - 719_468
+}
+
+/// ISO-8601 weekday: Monday=1 .. Sunday=7. (1970-01-01 was a Thursday.)
+pub fn iso_weekday(y: i64, m: u32, d: u32) -> i64 {
+    (days_from_civil(y, m, d) + 3).rem_euclid(7) + 1
+}
+
+/// Number of ISO weeks (52 or 53) in the ISO year `y`. A year has 53 weeks iff Jan-1 is a
+/// Thursday, or it's a leap year whose Jan-1 is a Wednesday.
+fn iso_weeks_in_year(y: i64) -> i64 {
+    let p = |y: i64| -> i64 { (y + y.div_euclid(4) - y.div_euclid(100) + y.div_euclid(400)).rem_euclid(7) };
+    if p(y) == 4 || p(y - 1) == 3 {
+        53
+    } else {
+        52
+    }
+}
+
+/// ISO-8601 week number (`strftime("%V")` / `date.isocalendar().week`), 1..53.
+pub fn iso_week(y: i64, m: u32, d: u32) -> i64 {
+    let ordinal = day_of_year(y, m, d) as i64;
+    let week = (ordinal - iso_weekday(y, m, d) + 10).div_euclid(7);
+    if week < 1 {
+        iso_weeks_in_year(y - 1)
+    } else if week > iso_weeks_in_year(y) {
+        1
+    } else {
+        week
+    }
+}
+
 /// Frappe `cint`: parse an int, falling back through float, default 0. Used for Check/Int casts.
 pub fn cint(s: &str) -> i64 {
     let t = s.trim();
@@ -210,6 +250,36 @@ fn hexval(b: u8) -> Option<u8> {
         b'a'..=b'f' => Some(b - b'a' + 10),
         b'A'..=b'F' => Some(b - b'A' + 10),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_week_matches_python_strftime_v() {
+        // (year, month, day, expected %V). Verified against CPython date.strftime("%V").
+        let cases = [
+            (2019, 12, 31, 1),  // ISO week 1 of 2020
+            (2020, 1, 1, 1),
+            (2020, 1, 15, 3),
+            (2021, 1, 1, 53),   // ISO week 53 of 2020
+            (2021, 12, 31, 52),
+            (2026, 6, 10, 24),  // diverges from the old (doy+6)/7 == 23 approximation
+            (2016, 1, 4, 1),
+            (2015, 12, 31, 53), // 2015 is a 53-week ISO year
+        ];
+        for (y, m, d, exp) in cases {
+            assert_eq!(iso_week(y, m, d), exp, "iso_week({y}-{m}-{d})");
+        }
+    }
+
+    #[test]
+    fn iso_weekday_monday_to_sunday() {
+        assert_eq!(iso_weekday(1970, 1, 1), 4); // Thursday
+        assert_eq!(iso_weekday(2026, 6, 8), 1); // Monday
+        assert_eq!(iso_weekday(2026, 6, 14), 7); // Sunday
     }
 }
 

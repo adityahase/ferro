@@ -182,7 +182,7 @@ fn parse_naming_series(con: &Connection, series: &str, data: &Map<String, Value>
 
 /// Evaluate a single naming-series token against date params / doc fields / `#` series.
 fn eval_part(con: &Connection, token: &str, prefix: &str, data: &Map<String, Value>) -> Result<String, OrmError> {
-    let (y, mo, d, h, mi, s) = util::now_civil();
+    let (y, mo, d, _, _, _) = util::now_civil();
     let t = token.trim();
     // A braced token may itself contain a series, e.g. {#####}
     if t.starts_with('#') {
@@ -194,8 +194,23 @@ fn eval_part(con: &Connection, token: &str, prefix: &str, data: &Map<String, Val
         "MM" => format!("{mo:02}"),
         "DD" => format!("{d:02}"),
         "JJJ" => format!("{:03}", util::day_of_year(y, mo, d)),
-        "WW" => format!("{:02}", (util::day_of_year(y, mo, d) + 6) / 7), // approx week-of-year
-        "timestamp" => format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}"),
+        // Frappe's determine_consecutive_week_number: ISO %V with Jan/Dec boundary fixups so the
+        // first/last days of a year stay consecutive ("00" for an early-Jan ISO wk 52/53, "53" for
+        // a late-Dec ISO wk 0/1).
+        "WW" => {
+            let w = util::iso_week(y, mo, d);
+            let w = if mo == 1 && w >= 52 {
+                0
+            } else if mo == 12 && w <= 1 {
+                53
+            } else {
+                w
+            };
+            format!("{w:02}")
+        }
+        // Frappe's {timestamp} is frappe.utils.now() — microsecond precision (keeps format-named
+        // docs created within the same second distinct, matching CPython).
+        "timestamp" => util::now_datetime(),
         other => {
             // strip surrounding braces if any, then treat as a doc field or literal
             let key = other.trim_matches(|c| c == '{' || c == '}');
