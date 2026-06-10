@@ -641,6 +641,9 @@ pub fn route_method(
         "frappe.realtime.get_user_info" => message(json!({})),
         "frappe.core.doctype.user.user.get_all_roles" => message(get_all_roles(con)),
         "frappe.core.doctype.user.user.get_timezones" => message(json!({"timezones": TIMEZONES})),
+        "frappe.desk.search.search_link" | "frappe.desk.search.search_widget" => {
+            method_search_link(con, metas, user, &args)
+        }
         "frappe.client.get_count" | "frappe.desk.reportview.get_count" => {
             method_get_count(con, metas, user, &args)
         }
@@ -984,6 +987,71 @@ fn method_get_count(con: &Connection, metas: &MetaCache, user: &str, args: &Hash
         Ok(n) => message(json!(n)),
         Err(e) => map_orm_err(e),
     }
+}
+
+/// `frappe.desk.search.search_link` / `search_widget` — the Link-field / global-search autosuggest.
+/// frappe-ui apps (CRM filter dropdowns, link controls) hit this constantly; a 404 throws in the
+/// UI. Native impl: a permission-checked `name`/title-field LIKE search (+ caller filters),
+/// returning `[{value, description}]` (build_for_autosuggest shape).
+fn method_search_link(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+    let doctype = match args.get("doctype") {
+        Some(d) if !d.is_empty() => d.clone(),
+        _ => return message(json!([])),
+    };
+    let txt = args.get("txt").map(|s| s.trim()).unwrap_or("");
+    let page_length: i64 = args.get("page_length").and_then(|s| s.parse().ok()).unwrap_or(10);
+    let meta = match get_meta(metas, con, &doctype) {
+        Ok(m) => m,
+        Err(_) => return message(json!([])),
+    };
+    let (acl, owner_scope) = match read_perm(con, &meta, user) {
+        Ok(v) => v,
+        Err(_) => return message(json!([])), // no read access -> empty suggestions, never an error
+    };
+    let title_field = meta.title_field.clone().filter(|t| t != "name" && !t.is_empty());
+    let mut fields = vec!["name".to_string()];
+    if let Some(tf) = &title_field {
+        fields.push(tf.clone());
+    }
+    let filters = args.get("filters").and_then(|f| serde_json::from_str::<Value>(f).ok()).unwrap_or(Value::Null);
+    let or_filters = if txt.is_empty() {
+        Value::Null
+    } else {
+        let like = format!("%{txt}%");
+        let mut orf = vec![json!(["name", "like", like])];
+        if let Some(tf) = &title_field {
+            orf.push(json!([tf, "like", like]));
+        }
+        Value::Array(orf)
+    };
+    let q = ListQuery {
+        fields,
+        filters,
+        or_filters,
+        limit_page_length: page_length.clamp(1, 50),
+        order_by: Some("modified desc".to_string()),
+        ..Default::default()
+    };
+    let rows = match orm::get_list(con, &meta, &acl, &q, owner_scope.as_deref()) {
+        Ok(v) => v,
+        Err(_) => return message(json!([])),
+    };
+    let out: Vec<Value> = rows
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|r| {
+                    let name = r.get("name").cloned().unwrap_or(Value::Null);
+                    let desc = title_field.as_ref().and_then(|tf| r.get(tf)).cloned();
+                    match desc {
+                        Some(d) if d != name && !d.is_null() => json!({"value": name, "description": d}),
+                        _ => json!({"value": name}),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    message(json!(out))
 }
 
 /// `frappe.desk.doctype.number_card.number_card.get_result` — the value shown on a workspace
