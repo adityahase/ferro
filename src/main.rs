@@ -114,7 +114,7 @@ fn main() {
         Some(db) if args.len() == 2 => smoke(db),
         _ => {
             eprintln!(
-                "usage:\n  ferro serve [<site-dir-or-db>] [--bench-mode [--site NAME] [--sites-path PATH]] [--port N | -b host:port] [--threads N] [--desk|--no-desk] [--default-user U] [--meta-cap N] [--dev]\n  ferro request <site-dir-or-db> <METHOD> <url-path-with-query> [json-body] [--user U] [--token k:s]\n  ferro provision-key <site-dir-or-db> <user>"
+                "usage:\n  ferro serve [<site-dir-or-db>] [--bench-mode [--site NAME] [--sites-path PATH]] [--port N | -b host:port] [--threads N] [--desk|--no-desk] [--default-user U | --insecure-desk-admin] [--meta-cap N] [--dev]\n  ferro request <site-dir-or-db> <METHOD> <url-path-with-query> [json-body] [--user U] [--token k:s] [--desk]\n  ferro provision-key <site-dir-or-db> <user>"
             );
             std::process::exit(2);
         }
@@ -515,6 +515,14 @@ fn serve(args: &[String]) {
                 enable_desk = true;
                 i += 1;
             }
+            // Explicit, auditable opt-in to "every unauthenticated request is Administrator"
+            // (a single-tenant sandbox posture). Equivalent to `--default-user Administrator`,
+            // but its name makes the security trade-off impossible to set by accident.
+            "--insecure-desk-admin" => {
+                default_user = "Administrator".to_string();
+                default_user_set = true;
+                i += 1;
+            }
             "--no-desk" => {
                 disable_desk = true;
                 i += 1;
@@ -613,10 +621,18 @@ fn serve(args: &[String]) {
         enable_desk = true;
     }
 
-    // Desk needs a logged-in System User on every request; default to Administrator unless the
-    // operator overrode --default-user explicitly.
+    // GUARDRAIL (FIX-7): never silently authenticate every unauthenticated request as
+    // Administrator just because the presentation flag --desk is set — that turns an
+    // internet-facing deploy into "auth off". Admin-default is now an explicit opt-in
+    // (`--default-user Administrator` or `--insecure-desk-admin`); otherwise desk runs with the
+    // safe Guest default and we warn that the per-user Desk needs token/session auth.
     if enable_desk && !default_user_set {
-        default_user = "Administrator".to_string();
+        eprintln!(
+            "ferro: WARNING --desk without --default-user: serving Desk with default_user=Guest. \
+             Unauthenticated requests are treated as Guest (read-gated). For a single-tenant admin \
+             sandbox pass --insecure-desk-admin (or --default-user Administrator) to make that \
+             posture explicit."
+        );
     }
 
     let sitename = site_name_from(&path);
