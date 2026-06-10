@@ -699,6 +699,7 @@ pub fn route_method(
         "frappe.desk.search.search_link" | "frappe.desk.search.search_widget" => {
             method_search_link(con, metas, user, &args)
         }
+        "frappe.desk.search.get_link_title" => method_get_link_title(con, metas, &args),
         "frappe.client.get_doc_permissions" => method_get_doc_permissions(con, metas, user, &args),
         "frappe.client.get_count" | "frappe.desk.reportview.get_count" => {
             method_get_count(con, metas, user, &args)
@@ -1149,6 +1150,37 @@ fn method_get_doc_permissions(con: &Connection, metas: &MetaCache, user: &str, a
 /// frappe-ui apps (CRM filter dropdowns, link controls) hit this constantly; a 404 throws in the
 /// UI. Native impl: a permission-checked `name`/title-field LIKE search (+ caller filters),
 /// returning `[{value, description}]` (build_for_autosuggest shape).
+/// `frappe.desk.search.get_link_title` — the display title for a Link field value. Form formatters
+/// call this (NOT silent) for every link cell; a 404 popped a "not implemented" dialog on every
+/// form/list with link fields. Mirrors Frappe: return the doc's title_field value, else the docname.
+fn method_get_link_title(con: &Connection, metas: &MetaCache, args: &HashMap<String, String>) -> (u16, Value) {
+    let doctype = args.get("doctype").cloned().unwrap_or_default();
+    let docname = args.get("docname").cloned().unwrap_or_default();
+    if doctype.is_empty() || docname.is_empty() {
+        return message(json!(docname));
+    }
+    if let Ok(meta) = get_meta(metas, con, &doctype) {
+        if let Some(tf) = meta
+            .title_field
+            .clone()
+            .filter(|t| t != "name" && !t.is_empty() && meta.has_column(t))
+        {
+            // identifiers come from the trusted DocType schema; docname is bound as a parameter.
+            let table_q = format!("\"{}\"", meta.table.replace('"', "\"\""));
+            let col_q = format!("\"{}\"", tf.replace('"', "\"\""));
+            let sql = format!("SELECT {col_q} FROM {table_q} WHERE name = ?1");
+            if let Ok(Some(v)) =
+                con.query_row(&sql, rusqlite::params![docname], |r| r.get::<_, Option<String>>(0))
+            {
+                if !v.is_empty() {
+                    return message(json!(v));
+                }
+            }
+        }
+    }
+    message(json!(docname))
+}
+
 fn method_search_link(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) if !d.is_empty() => d.clone(),
