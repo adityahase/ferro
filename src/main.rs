@@ -806,16 +806,10 @@ fn serve(args: &[String]) {
     #[cfg(feature = "python")]
     let pyfall = if web_runtime == "ferrod" {
         let apps: Vec<String> = load_installed_apps(&path).into_iter().filter(|a| a != "frappe").collect();
-        match pyfall::PyFall::boot(&db_path, metas.clone(), &apps) {
-            Ok(pf) => {
-                eprintln!("ferro: web_runtime=ferrod — {} app method(s) routed to Python", pf.count());
-                Some(Arc::new(pf))
-            }
-            Err(e) => {
-                eprintln!("ferro: web_runtime=ferrod but interpreter boot failed: {e}");
-                None
-            }
-        }
+        // Lazy: build the routing map now (cheap Rust scan), boot CPython only on the first app
+        // method call. A Desk-only / browse-only tenant never starts the interpreter and idles at
+        // the pure-Rust footprint.
+        Some(Arc::new(pyfall::PyFall::new(&db_path, metas.clone(), &apps)))
     } else {
         None
     };
