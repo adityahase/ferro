@@ -8,11 +8,16 @@ use rusqlite::Connection;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
-/// Columns Frappe guarantees on every doc table.
-pub const STANDARD_COLUMNS: &[&str] = &[
-    "name", "creation", "modified", "modified_by", "owner", "docstatus", "idx",
-    "parent", "parentfield", "parenttype", "_user_tags", "_comments", "_assign", "_liked_by",
-];
+/// Frappe `default_fields` (after stripping "doctype"): present on EVERY doc table.
+pub const DEFAULT_FIELDS: &[&str] =
+    &["name", "owner", "creation", "modified", "modified_by", "docstatus", "idx"];
+/// Frappe `optional_fields`: the metadata columns, present when the table was created with them.
+pub const OPTIONAL_FIELDS: &[&str] = &["_user_tags", "_comments", "_assign", "_liked_by", "_seen"];
+/// Frappe `child_table_fields`: ONLY exist on child tables (istable=1). Selecting these from a
+/// non-child table is the parent-key corruption bug (FIX-8) — SQLite's double-quoted-identifier
+/// fallback returns the literal column name as a string. So they are synthesized only for singles
+/// (PRAGMA is authoritative for real tables and simply won't list them on non-child tables).
+pub const CHILD_TABLE_FIELDS: &[&str] = &["parent", "parentfield", "parenttype"];
 
 #[derive(Clone)]
 pub struct DocField {
@@ -151,20 +156,28 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
         }
     }
 
-    // 3. Physical columns. For non-single tables PRAGMA gives the authoritative set
-    //    (includes custom fields). Singles/virtual have no table, so synthesize from meta.
-    let mut columns: HashSet<String> = STANDARD_COLUMNS.iter().map(|s| s.to_string()).collect();
-    for f in &fields {
-        if !f.is_virtual_column() {
-            columns.insert(f.fieldname.clone());
-        }
-    }
+    // 3. Physical columns. For a real table PRAGMA is the AUTHORITATIVE set (standard + docfield
+    //    + custom columns that actually exist) — crucially it lists parent/parentfield/parenttype
+    //    only on child tables, so non-child get_doc never selects those phantom columns (FIX-8).
+    //    Singles/virtual have no table, so synthesize the valid-column set from meta instead.
+    let mut columns: HashSet<String> = HashSet::new();
     if !issingle && !is_virtual {
         if let Ok(mut stmt) = con.prepare(&format!("PRAGMA table_info({})", quote_ident(&table))) {
             if let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(1)) {
                 for c in rows.flatten() {
                     columns.insert(c);
                 }
+            }
+        }
+    } else {
+        columns.extend(DEFAULT_FIELDS.iter().map(|s| s.to_string()));
+        columns.extend(OPTIONAL_FIELDS.iter().map(|s| s.to_string()));
+        if istable {
+            columns.extend(CHILD_TABLE_FIELDS.iter().map(|s| s.to_string()));
+        }
+        for f in &fields {
+            if !f.is_virtual_column() {
+                columns.insert(f.fieldname.clone());
             }
         }
     }

@@ -89,6 +89,7 @@ def cleanup():
         "DELETE FROM tabUser WHERE name IN ('ferro_test@example.com','ferro_enc@example.com')",
         "DELETE FROM tabRole WHERE name='Ferro Test'",
         "DELETE FROM tabToDo WHERE description LIKE 'ferro-verify-%'",
+        "DELETE FROM \"tabConsole Log\" WHERE type='y'",
     ]:
         try: cur.execute(s)
         except Exception as e: print("  cleanup warn:", e)
@@ -244,6 +245,16 @@ def run_tests():
     print("\n[single doctype]")
     s,b = req("GET","/api/resource/Domain Settings/Domain Settings", user=ADMIN)
     check("single read ok + has docstatus/idx", s==200 and "docstatus" in b.get("data",{}) and "idx" in b.get("data",{}), f"{s} {b}")
+
+    print("\n[parent-key corruption (FIX-8)]")
+    s,b = req("GET", "/api/resource/User/Administrator", user=ADMIN)
+    d = b.get("data",{})
+    bad = [k for k in d if "parent" in k or k.startswith('"')]
+    check("non-child doc (User) has NO parent*/quoted phantom keys", s==200 and not bad, f"bad keys={bad}")
+    # A child row still carries its real parent/parentfield/parenttype columns.
+    s,b = req("GET", "/api/resource/Has Role/frt-role-1", user=ADMIN)
+    d = b.get("data",{})
+    check("child doc (Has Role) keeps real parent linkage", s==200 and d.get("parent")=="ferro_test@example.com" and d.get("parentfield")=="roles" and d.get("parenttype")=="User", f"{s} parent={d.get('parent')!r} pf={d.get('parentfield')!r} pt={d.get('parenttype')!r}")
 
     print("\n[virtual doctype]")
     s,b = req("GET","/api/resource/Recorder", user=ADMIN)

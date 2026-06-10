@@ -337,6 +337,10 @@ fn open_conn(db_path: &str) -> Connection {
     let con = Connection::open(db_path).expect("open sqlite");
     con.busy_timeout(std::time::Duration::from_secs(5)).ok();
     con.pragma_update(None, "foreign_keys", "OFF").ok();
+    // Turn SQLite's double-quoted-string misfeature OFF: a double-quoted token that isn't a real
+    // column becomes an ERROR instead of silently degrading to a string literal. Belt-and-suspenders
+    // for FIX-8 — every identifier ferro emits is a genuine column, so this only catches bugs.
+    con.pragma_update(None, "legacy_double_quoted_strings", "OFF").ok();
     // Bound per-connection page cache so total memory stays flat as --threads scales
     // (each serve thread owns one Connection). Negative = KiB; -2048 ≈ 2 MiB/connection.
     con.pragma_update(None, "cache_size", -2048).ok();
