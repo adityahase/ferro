@@ -35,6 +35,21 @@ else
   echo "    WARNING: no asset tree at $ROOT/assets — Desk bundles will 404. Stage them (rsync) before serving Desk."
 fi
 
+# Stage each desk app's setup_wizard.js into the shared asset tree. ferro's setup_wizard_requires
+# advertises /assets/<app>/js/setup_wizard.js when present, so an ERPNext-style wizard shows its app
+# slide (company/org). The plain JS registers slides via frappe.setup.on; the frappe core wizard
+# works without it. Sourced from the app-mirror (the app repos ferro serves).
+if [ -d "$ROOT/assets" ] && [ -d "$ROOT/app-mirror" ]; then
+  for appdir in "$ROOT"/app-mirror/*/; do
+    name="$(basename "$appdir")"
+    sw="$appdir$name/public/js/setup_wizard.js"
+    if [ -f "$sw" ]; then
+      mkdir -p "$ROOT/assets/$name/js"
+      cp -f "$sw" "$ROOT/assets/$name/js/setup_wizard.js" && echo "    staged setup wizard slide: $name"
+    fi
+  done
+fi
+
 echo "==> reap token"
 if [ ! -f "$ROOT/control/reap.token" ]; then
   ( umask 077; head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$ROOT/control/reap.token" )
