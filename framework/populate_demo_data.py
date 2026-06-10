@@ -67,7 +67,25 @@ def _text_value(c, i):
     return f"{w} {i:04d}"
 
 
-def _demo_value(dt, c, sqltype, fieldtype, options, i):
+_LINK_NAMES = {}  # target doctype -> [names] (cached existing rows, for Link demo values)
+
+
+def _link_value(con, target, i):
+    """A real existing name from the Link target (so badges/links resolve), else NULL. Targets like
+    CRM Lead Status are seeded by install-hooks before populate runs, so this fills status etc."""
+    if not target:
+        return None
+    if target not in _LINK_NAMES:
+        try:
+            rows = con.execute(f"SELECT name FROM {q('tab' + target)} ORDER BY name LIMIT 200").fetchall()
+            _LINK_NAMES[target] = [r[0] for r in rows]
+        except sqlite3.OperationalError:
+            _LINK_NAMES[target] = []
+    names = _LINK_NAMES[target]
+    return names[i % len(names)] if names else None
+
+
+def _demo_value(con, dt, c, sqltype, fieldtype, options, i):
     """A type-valid demo value for column `c` (Frappe `fieldtype` when known, else SQLite type)."""
     if c == "name":
         return f"{dt}-DEMO-{i:06d}"
@@ -105,8 +123,10 @@ def _demo_value(dt, c, sqltype, fieldtype, options, i):
                 if opt.strip():
                     return opt.strip()
         return None
-    if ft in ("Link", "Dynamic Link", "Table", "Table MultiSelect"):
-        return None  # a fabricated link target won't resolve; NULL renders cleanly
+    if ft == "Link":
+        return _link_value(con, options, i)  # a real existing target (status, group, …) or NULL
+    if ft in ("Dynamic Link", "Table", "Table MultiSelect"):
+        return None  # no fixed target / child rows; NULL renders cleanly
     if ft in ("Attach", "Attach Image", "Image", "Color", "Signature", "Password"):
         return None
     # fall back to the SQLite storage type for std/unmapped columns
@@ -172,7 +192,7 @@ def main():
         for i in range(have, have + need):
             vals = []
             for c, t in cols:
-                vals.append(_demo_value(dt, c, t, ftype.get(c), fopts.get(c), i))
+                vals.append(_demo_value(con, dt, c, t, ftype.get(c), fopts.get(c), i))
             rows.append(vals)
         con.executemany(sql, rows)
         total += need
