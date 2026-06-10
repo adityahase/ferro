@@ -260,6 +260,23 @@ def run_tests():
     s,b = req("GET","/api/resource/Domain Settings/Domain Settings", user=ADMIN)
     check("single read ok + has docstatus/idx", s==200 and "docstatus" in b.get("data",{}) and "idx" in b.get("data",{}), f"{s} {b}")
 
+    print("\n[db-api: client.get_value / get_single_value (B-DB-1/2)]")
+    # multi-field get_value returns all requested fields as a dict
+    s,b = req("GET", '/api/method/frappe.client.get_value?doctype=User&fieldname=["name","email"]&filters={"name":"Administrator"}', user=ADMIN, desk=True)
+    m = b.get("message",{})
+    check("get_value multi-field returns all fields", s==200 and m.get("name")=="Administrator" and "email" in m, f"{s} {m}")
+    # get_value on a Single reads tabSingles (not a tab<Single> table)
+    s,b = req("GET", '/api/method/frappe.client.get_value?doctype=System Settings&fieldname=["app_name"]', user=ADMIN, desk=True)
+    check("get_value on a Single reads tabSingles (B-DB-1)", s==200 and b.get("message",{}).get("app_name")=="Frappe", f"{s} {b}")
+    # get_list on a Single does not 500
+    s,b = req("GET", '/api/method/frappe.client.get_list?doctype=System Settings&fields=["app_name"]', user=ADMIN, desk=True)
+    check("get_list on a Single -> one-row list, no 500 (B-DB-1)", s==200 and isinstance(b.get("message"),list) and len(b["message"])==1, f"{s} {b}")
+    # get_single_value casts + returns None (not 0) for an unset field
+    s,b = req("GET", '/api/method/frappe.client.get_single_value?doctype=System Settings&field=app_name', user=ADMIN, desk=True)
+    check("get_single_value returns the set value", s==200 and b.get("message")=="Frappe", f"{s} {b}")
+    s,b = req("GET", '/api/method/frappe.client.get_single_value?doctype=System Settings&field=__nope__', user=ADMIN, desk=True)
+    check("get_single_value unset field -> null not 0 (B-DB-2)", s==200 and b.get("message") is None, f"{s} {b}")
+
     print("\n[parent-key corruption (FIX-8)]")
     s,b = req("GET", "/api/resource/User/Administrator", user=ADMIN)
     d = b.get("data",{})

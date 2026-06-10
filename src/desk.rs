@@ -1098,6 +1098,22 @@ fn method_client_get(con: &Connection, metas: &MetaCache, user: &str, args: &Has
 }
 
 /// `frappe.client.get_value` — selected fields of the first matching doc.
+/// Parse the `fieldname` arg of frappe.client.get_value: a JSON-encoded list of names
+/// (multi-field) OR a single bare field name. Returns the requested column names.
+fn parse_get_value_fields(meta: &Meta, raw: Option<&String>) -> Vec<String> {
+    match raw {
+        Some(s) => {
+            if let Ok(Value::Array(a)) = serde_json::from_str::<Value>(s) {
+                a.iter().filter_map(|v| v.as_str().map(bare_field)).filter(|f| meta.has_column(f)).collect()
+            } else {
+                let f = bare_field(s);
+                if meta.has_column(&f) { vec![f] } else { vec![] }
+            }
+        }
+        None => vec![],
+    }
+}
+
 fn method_get_value(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
@@ -1111,11 +1127,33 @@ fn method_get_value(con: &Connection, metas: &MetaCache, user: &str, args: &Hash
         Ok(v) => v,
         Err(e) => return e,
     };
+    let fields = parse_get_value_fields(&meta, args.get("fieldname"));
+
+    // B-DB-1: a Single doctype has no `tab<Single>` table — read its values from tabSingles
+    // (via get_doc) and project the requested fields, mirroring db.get_values_from_single.
+    if meta.issingle {
+        return match orm::get_doc(con, &meta, &acl, &meta.name) {
+            Ok(doc) => {
+                let src = doc.as_object().cloned().unwrap_or_default();
+                let mut out = Map::new();
+                let keys: Vec<String> = if fields.is_empty() { src.keys().cloned().collect() } else { fields };
+                for k in keys {
+                    out.insert(k.clone(), src.get(&k).cloned().unwrap_or(Value::Null));
+                }
+                message(Value::Object(out))
+            }
+            Err(e) => map_orm_err(e),
+        };
+    }
+
     let mut q = build_query(&meta, args);
-    if let Some(fieldname) = args.get("fieldname") {
-        let f = bare_field(fieldname);
-        if meta.has_column(&f) {
-            q.fields = vec![f];
+    if !fields.is_empty() {
+        q.fields = fields;
+    }
+    // A bare string `filters` (not JSON) means "the doc with this name" (Frappe coerces str->{name}).
+    if let Some(f) = args.get("filters") {
+        if serde_json::from_str::<Value>(f).is_err() {
+            q.filters = json!({ "name": f });
         }
     }
     q.limit_page_length = 1;
@@ -1149,11 +1187,9 @@ fn method_get_single_value(con: &Connection, metas: &MetaCache, user: &str, args
         )
         .ok()
         .flatten();
-    let _ = metas;
-    match val {
-        Some(v) => message(Value::from(v)),
-        None => message(json!(0)),
-    }
+    // B-DB-2: cast by fieldtype and return null (not 0) when the value is unset, like
+    // frappe.db.get_single_value.
+    message(orm::cast_by_fieldtype(meta.field(&field), val))
 }
 
 /// `frappe.desk.desktop.get_desktop_page` — resolve a workspace's widgets (cards/charts/etc).

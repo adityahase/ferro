@@ -92,7 +92,7 @@ fn json_to_sql(v: &Value) -> SqlValue {
 }
 
 /// Cast a stored single-value string to JSON per its fieldtype (mirrors Frappe as_dict casting).
-fn cast_by_fieldtype(field: Option<&DocField>, raw: Option<String>) -> Value {
+pub fn cast_by_fieldtype(field: Option<&DocField>, raw: Option<String>) -> Value {
     let raw = match raw {
         Some(s) => s,
         None => return Value::Null,
@@ -334,6 +334,26 @@ pub fn get_list(
     // Virtual doctypes have no table; without a controller we can only return an empty set.
     if meta.is_virtual {
         return Ok(Value::Array(vec![]));
+    }
+
+    // Singles have no `tab<Single>` table — their values live in tabSingles (B-DB-1). Return the
+    // one doc as a single-row list, projected to the requested fields and ACL-masked via get_single.
+    if meta.issingle {
+        let doc = get_single(con, meta, acl)?;
+        let src = doc.as_object().cloned().unwrap_or_default();
+        let wants_all = q.fields.iter().any(|f| f.trim().trim_matches('`') == "*");
+        let projected = if wants_all || q.fields.is_empty() {
+            Value::Object(src)
+        } else {
+            let mut o = Map::new();
+            for f in &q.fields {
+                let f = f.trim().trim_matches('`');
+                let f = f.rsplit('.').next().unwrap_or(f);
+                o.insert(f.to_string(), src.get(f).cloned().unwrap_or(Value::Null));
+            }
+            Value::Object(o)
+        };
+        return Ok(Value::Array(vec![projected]));
     }
 
     // Validate & quote selected fields, honoring permlevel.
