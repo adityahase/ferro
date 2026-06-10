@@ -455,6 +455,28 @@ def provision(sub, apps):
                     raise RuntimeError(f"install-app {app} failed:\n{out[-1500:]}")
                 _ok(s, f"{lbl} installed ({REGISTRY.get(app,{}).get('doctypes','?')} doctypes)")
 
+            # Run each app's after_install hook (its seed/master data — CRM statuses, fields
+            # layouts, industries, …) via the python-enabled runtime. Native install-app materialises
+            # DocType *schema* only, and the app frontends crash on the missing seed data (e.g. CRM's
+            # status badges). Best-effort: a failure leaves a schema-only site, which still serves.
+            seed_apps = [a for a in apps if a != "frappe"]
+            if seed_apps:
+                s = _step(job, "seed", "seeding app data")
+                site_dir = os.path.join(forge, "sites", host)
+                py_bin = envv("FERRO_RUNTIME_PY_BIN", "/opt/ferro/runtime/ferro-py")
+                pyhome = envv("FERRO_PYHOME", "/opt/ferro/python")
+                henv = dict(env)
+                henv["PYTHONHOME"] = pyhome
+                henv["LD_LIBRARY_PATH"] = f"{pyhome}/lib:" + henv.get("LD_LIBRARY_PATH", "")
+                henv["FERRO_SHIM"] = os.path.join(FERRO_HOME, "framework", "shim")
+                henv["FERRO_REPOS"] = APP_MIRROR
+                if os.path.exists(py_bin):
+                    rc, out = sh([py_bin, "install-hooks", site_dir] + seed_apps,
+                                 env=henv, cwd=forge, timeout=180)  # best-effort
+                    _ok(s, "app data seeded" if rc == 0 else "schema-only (seed incomplete)")
+                else:
+                    _ok(s, "schema-only (no python runtime)")
+
             s = _step(job, "workspaces", "building the Desk sidebar")
             if import_workspaces(forge, host, apps):
                 _ok(s, "app workspaces added to Desk")
