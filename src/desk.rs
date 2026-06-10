@@ -591,6 +591,24 @@ pub fn route_method(
             message(json!("[]"))
         }
         "frappe.core.doctype.background_task.background_task.get_recent_tasks" => message(json!([])),
+        // Onboarding widget (frappe-ui SPAs + Desk poll this; CRM hits it dozens of times per page).
+        // Faithful: parse the user's stored onboarding_status, else {} — never 404.
+        "frappe.onboarding.get_onboarding_status" => {
+            let raw: Option<String> = con
+                .query_row("SELECT onboarding_status FROM \"tabUser\" WHERE name=?1", [user], |r| r.get(0))
+                .ok()
+                .flatten();
+            let parsed = raw
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                .unwrap_or_else(|| json!({}));
+            message(parsed)
+        }
+        // Telemetry is off in ferro — answer the enablement probes falsy so the client never tries
+        // to ship pulse/posthog events (and never pops a 404 dialog).
+        "frappe.utils.telemetry.pulse.client.is_enabled"
+        | "frappe.utils.telemetry.is_enabled"
+        | "frappe.utils.telemetry.posthog.is_enabled" => message(json!(false)),
         "frappe.desk.notifications.get_open_count" => {
             message(json!({"open_count_doctype": {}, "open_count_other": {}, "targets": {}}))
         }
