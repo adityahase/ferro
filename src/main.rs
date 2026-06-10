@@ -58,6 +58,8 @@ struct App {
     default_user: String,
     encryption_key: Option<String>,
     dev: bool,
+    /// `maintenance_mode` from site/common config: when true, all writes return 503 InReadOnlyMode.
+    maintenance_mode: bool,
     /// When set, ferro also serves the Frappe Desk SPA (HTML shell + assets + desk.* methods).
     desk: Option<Arc<desk::Desk>>,
     /// When set, ferro also serves installed apps' frappe-ui SPAs (crm/gameplan/helpdesk/…) at the
@@ -173,6 +175,35 @@ fn load_encryption_key(arg: &str) -> Option<String> {
     let text = std::fs::read_to_string(common).ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
     v.get("encryption_key").and_then(|x| x.as_str()).map(|s| s.to_string())
+}
+
+/// Read `maintenance_mode` from site_config.json (then common_site_config.json). Frappe treats a
+/// truthy value (1/true) as read-only: all writes return 503. Defaults to false.
+fn load_maintenance_mode(arg: &str) -> bool {
+    let p = Path::new(arg);
+    let site_dir = if p.is_dir() {
+        p.to_path_buf()
+    } else {
+        match p.parent().and_then(|d| d.parent()) {
+            Some(x) => x.to_path_buf(),
+            None => return false,
+        }
+    };
+    let truthy = |v: &Value| -> bool {
+        v.as_i64().map(|n| n != 0).or_else(|| v.as_bool()).unwrap_or(false)
+    };
+    for cfg in [site_dir.join("site_config.json"), site_dir.parent().map(|d| d.join("common_site_config.json")).unwrap_or_default()] {
+        if let Ok(text) = std::fs::read_to_string(&cfg) {
+            if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                if let Some(m) = v.get("maintenance_mode") {
+                    if truthy(m) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The site's `installed_apps` list (arg may be the site dir or the .db file). Used to gate which
@@ -423,6 +454,7 @@ fn request_cli(args: &[String]) {
         default_user,
         encryption_key: load_encryption_key(path),
         dev,
+        maintenance_mode: load_maintenance_mode(path),
         desk,
         spa: None,
         #[cfg(feature = "python")]
@@ -731,6 +763,7 @@ fn serve(args: &[String]) {
         default_user,
         encryption_key,
         dev,
+        maintenance_mode: load_maintenance_mode(&path),
         desk,
         spa,
         #[cfg(feature = "python")]
@@ -1131,6 +1164,11 @@ fn route_v2_document(
         Err(meta::MetaError::NotFound(d)) => return err_v2(dev, 404, "DoesNotExistError", format!("DocType {d} not found")),
         Err(meta::MetaError::Db(e)) => return map_orm_err_v2(dev, OrmError::Db(e)),
     };
+
+    // B-REST-4: read-only mode rejects every write with 503 (before bulk/CRUD work).
+    if app.maintenance_mode && matches!(method, "POST" | "PUT" | "PATCH" | "DELETE") {
+        return err_v2(dev, 503, "InReadOnlyMode", "Site is in read-only mode".into());
+    }
 
     // Trailing-segment operations on the document collection: bulk_delete (POST) and <name>/copy (GET).
     if let Some(n) = &name {
@@ -1698,6 +1736,11 @@ fn route_resource(
         Err(meta::MetaError::NotFound(d)) => return err(dev, 404, "DoesNotExistError", format!("DocType {d} not found")),
         Err(meta::MetaError::Db(e)) => return map_orm_err(dev, OrmError::Db(e)),
     };
+
+    // B-REST-4: in maintenance/read-only mode every write is rejected with 503 before any work.
+    if app.maintenance_mode && matches!(method, "POST" | "PUT" | "PATCH" | "DELETE") {
+        return err(dev, 503, "InReadOnlyMode", "Site is in read-only mode".into());
+    }
 
     let ptype = auth::ptype_for_method(method);
     let perm = auth::permission(con, &meta, &ident.user, ptype);

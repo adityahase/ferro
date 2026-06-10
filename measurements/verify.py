@@ -406,6 +406,20 @@ def run_tests():
     d = b.get("data",{})
     check("child doc (Has Role) keeps real parent linkage", s==200 and d.get("parent")=="ferro_test@example.com" and d.get("parentfield")=="roles" and d.get("parenttype")=="User", f"{s} parent={d.get('parent')!r} pf={d.get('parentfield')!r} pt={d.get('parenttype')!r}")
 
+    print("\n[read-only / maintenance mode (B-REST-4)]")
+    cfg_path = SITE + "/site_config.json"
+    _cfg = json.load(open(cfg_path))
+    try:
+        json.dump({**_cfg, "maintenance_mode": 1}, open(cfg_path, "w"))
+        s,b = req("POST","/api/resource/ToDo", {"description":"ferro-verify-ro"}, user=ADMIN)
+        check("write in maintenance mode -> 503 InReadOnlyMode (v1)", s==503 and b.get("exc_type")=="InReadOnlyMode", f"{s} {b}")
+        s,b = req("POST","/api/v2/document/ToDo", {"description":"ferro-verify-ro"}, user=ADMIN)
+        check("write in maintenance mode -> 503 errors[] (v2)", s==503 and isinstance(b.get("errors"),list), f"{s} {b}")
+        s,b = req("GET","/api/resource/DocType?limit_page_length=1", user=ADMIN)
+        check("read still works in maintenance mode -> 200", s==200, f"{s} {b}")
+    finally:
+        json.dump(_cfg, open(cfg_path, "w"))
+
     print("\n[virtual doctype]")
     s,b = req("GET","/api/resource/Recorder", user=ADMIN)
     check("virtual doctype list -> [] not 500", s==200 and b.get("data")==[], f"{s} {b}")
