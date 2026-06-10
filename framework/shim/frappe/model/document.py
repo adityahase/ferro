@@ -13,6 +13,20 @@ except ImportError:
     _rt = None
 
 from frappe.model.meta import Meta
+from frappe.exceptions import NameError as _DuplicateName  # frappe's, raised on a name conflict
+
+
+def _native_insert(doctype, data):
+    """Insert via ferro_rt, mapping the native "already exists" ValueError to frappe.NameError —
+    real Frappe raises NameError on a duplicate name, and idempotent installers catch exactly that."""
+    if _rt is None:
+        return data
+    try:
+        return _rt.insert(doctype, _json.dumps(data, default=str))
+    except ValueError as e:
+        if "already exists" in str(e):
+            raise _DuplicateName(str(e))
+        raise
 
 
 class BaseDocument:
@@ -239,11 +253,33 @@ class Document(BaseDocument):
         for m in ("before_validate", "validate", "before_save", "before_insert"):
             self.run_method(m)
         data = self.as_dict()
-        saved = _rt.insert(self.get("doctype"), _json.dumps(data, default=str)) if _rt else data
+        try:
+            saved = _native_insert(self.get("doctype"), data)
+        except _DuplicateName:
+            if ignore_if_duplicate:
+                return self
+            raise
         self.update(dict(saved))
         self.__dict__["__islocal"] = False
         for m in ("after_insert", "on_update", "on_change"):
             self.run_method(m)
+        return self
+
+    def db_insert(self, *a, **k):
+        """Low-level insert (real Frappe: no validate/hooks). The shim routes it to the same native
+        insert; close enough for the bootstrap inserts (UOM, defaults) that use it."""
+        data = self.as_dict()
+        saved = _native_insert(self.get("doctype"), data)
+        self.update(dict(saved))
+        self.__dict__["__islocal"] = False
+        return self
+
+    def db_update(self, *a, **k):
+        if self.is_new():
+            return self.db_insert()
+        data = self.as_dict()
+        if _rt:
+            _rt.update(self.get("doctype"), self.get("name"), _json.dumps(data, default=str))
         return self
 
     def save(self, ignore_permissions=False, ignore_version=False, **k):

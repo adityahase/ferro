@@ -367,6 +367,38 @@ def whitelist(allow_guest=False, methods=None, xss_safe=False, **kwargs):
 
 
 # --------------------------------------------------------------------------- helpers used widely
+def get_app_path(app, *parts):
+    """Path to <app>'s python package + parts (real Frappe: <bench>/apps/<app>/<app>/...). Apps live
+    under FERRO_REPOS here. Used by install_fixtures / setup to read .json/.txt/.html fixture files."""
+    import os
+    repos = os.environ.get("FERRO_REPOS", "/opt/ferro/app-mirror")
+    return os.path.join(repos, app, app, *[str(p) for p in parts])
+
+
+def get_app_source_path(app, *parts):
+    return get_app_path(app, *parts)
+
+
+def get_module_path(module, *parts):
+    """Best-effort module dir path: scrub the module name to a folder under each app package."""
+    import os, glob
+    repos = os.environ.get("FERRO_REPOS", "/opt/ferro/app-mirror")
+    folder = scrub(module)
+    for hit in glob.glob(os.path.join(repos, "*", "*", folder)):
+        return os.path.join(hit, *[str(p) for p in parts])
+    return os.path.join(repos, folder, *[str(p) for p in parts])
+
+
+def read_file(path, raise_not_found=False):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        if raise_not_found:
+            raise
+        return None
+
+
 def scrub(txt):
     return (txt or "").replace(" ", "_").replace("-", "_").lower()
 
@@ -487,6 +519,15 @@ def real_time(*a, **k):
 
 
 def __getattr__(name):
+    # Exception names must resolve to REAL Exception subclasses, not the permissive stub: app code
+    # does `except frappe.NameError:` / `except frappe.SomeError:`, and catching a non-BaseException
+    # is a TypeError. frappe.exceptions.__getattr__ mints a real FrappeException subclass on demand.
+    if name.endswith("Error") or name.endswith("Exception"):
+        from frappe import exceptions
+        try:
+            return getattr(exceptions, name)
+        except Exception:
+            pass
     # permissive fallback for the long tail of top-level frappe.* names a controller may import
     from frappe._lazy import stub_attr
     return stub_attr(name)
