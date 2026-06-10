@@ -45,6 +45,27 @@ _JSON_META = {"_assign", "_liked_by", "_comments", "_user_tags", "_seen"}
 NOW_DATE = "2026-06-07"
 NOW_TIME = "10:30:00"
 
+# A small word pool so text demo values read like real records (distinct per row) instead of one
+# repeated placeholder string. Kept generic so it suits any doctype's Data/Text fields.
+_WORDS = ["Acme", "Globex", "Initech", "Umbrella", "Soylent", "Hooli", "Stark", "Wayne", "Wonka",
+          "Tyrell", "Cyberdyne", "Aperture", "Vandelay", "Gekko", "Oscorp", "Massive", "Pied Piper",
+          "Prestige", "Bluth", "Dunder", "Sterling", "Paper", "Apex", "Summit", "Pioneer", "Vertex"]
+_NAME_HINTS = ("name", "title", "subject", "label", "full_name", "first_name", "item_name",
+               "customer_name", "supplier_name", "lead_name", "company_name", "description")
+
+
+def _text_value(c, i):
+    """A distinct, human-readable demo value for a text column, varied by row index."""
+    w = _WORDS[i % len(_WORDS)]
+    cl = (c or "").lower()
+    if cl == "first_name":
+        return w
+    if cl in ("description",) or cl.endswith("_description"):
+        return f"{w} — sample {c} for demo record {i}."
+    if any(h in cl for h in _NAME_HINTS):
+        return f"{w} {i:04d}"
+    return f"{w} {i:04d}"
+
 
 def _demo_value(dt, c, sqltype, fieldtype, options, i):
     """A type-valid demo value for column `c` (Frappe `fieldtype` when known, else SQLite type)."""
@@ -94,8 +115,8 @@ def _demo_value(dt, c, sqltype, fieldtype, options, i):
     if "REAL" in sqltype or sqltype in ("FLOAT", "DOUBLE"):
         return round((i % 1000) * 1.5, 2)
     if ft in ("Data", "Small Text", "Text", "Long Text", "Text Editor", "HTML Editor", "", None):
-        return STR
-    return STR
+        return _text_value(c, i)
+    return _text_value(c, i)
 
 
 def main():
