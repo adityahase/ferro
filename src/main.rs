@@ -1731,7 +1731,14 @@ fn route_resource(
             match orm::get_list(con, &meta, &acl, &q, owner_scope) {
                 Ok(mut data) => {
                     apply_expand_list(con, app, &ident.user, &meta, &mut data, params); // FIX-3
-                    (200, json!({ "data": data }))
+                    let mut resp = json!({ "data": data });
+                    // FIX-6: debug=1 adds a (JSON-string) _debug_messages array to the response.
+                    if param_truthy(params.get("debug")) {
+                        if let Value::Object(ref mut o) = resp {
+                            o.insert("_debug_messages".into(), json!("[]"));
+                        }
+                    }
+                    (200, resp)
                 }
                 Err(e) => map_orm_err(dev, e),
             }

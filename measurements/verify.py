@@ -271,6 +271,23 @@ def run_tests():
     check("updating other fields with set_only_once unchanged -> 200 (B-DOC-2)", s==200, f"{s} {b}")
     if soo_name: req("DELETE", f"/api/resource/ToDo/{soo_name}", user=ADMIN)
 
+    print("\n[client write methods + debug (set_value/delete, FIX-6)]")
+    s,b = req("POST","/api/resource/ToDo", {"description":"ferro-verify-cw"}, user=ADMIN)
+    cw = b.get("data",{}).get("name")
+    s,b = req("POST","/api/method/frappe.client.set_value", {"doctype":"ToDo","name":cw,"fieldname":"status","value":"Closed"}, user=ADMIN, desk=True)
+    check("client.set_value single field", s==200 and b.get("message",{}).get("status")=="Closed", f"{s} {b}")
+    # multi-field dict form (use `status`, not the set_only_once `priority` fixture).
+    s,b = req("POST","/api/method/frappe.client.set_value", {"doctype":"ToDo","name":cw,"fieldname":{"status":"Open"}}, user=ADMIN, desk=True)
+    check("client.set_value multi-field dict", s==200 and b.get("message",{}).get("status")=="Open", f"{s} {b}")
+    s,b = req("POST","/api/method/frappe.client.set_value", {"doctype":"ToDo","name":cw,"fieldname":"status","value":"Open"}, user="Guest", desk=True)
+    check("Guest client.set_value -> 403 (write gated)", s==403, f"{s} {b}")
+    s,b = req("POST","/api/method/frappe.client.delete", {"doctype":"ToDo","name":cw}, user=ADMIN, desk=True)
+    check("client.delete -> 200", s==200, f"{s} {b}")
+    s,b = req("GET", f"/api/resource/ToDo/{cw}", user=ADMIN)
+    check("client.delete actually removed the doc", s==404, f"{s} {b}")
+    s,b = req("GET", '/api/resource/DocType?fields=["name"]&limit_page_length=2&debug=1', user=ADMIN)
+    check("debug=1 -> _debug_messages present (FIX-6)", s==200 and "_debug_messages" in b, f"keys={list(b)}")
+
     print("\n[error shapes]")
     s,b = req("GET","/api/resource/NoSuchDoctype/x", user=ADMIN)
     check("unknown doctype -> 404", s==404, f"{s} {b}")

@@ -641,6 +641,8 @@ pub fn route_method(
         "frappe.desk.form.load.getdoc" => method_getdoc(con, metas, user, &args),
         "frappe.desk.form.save.savedocs" => method_savedocs(con, metas, user, &args),
         "frappe.client.save" | "frappe.client.insert" => method_client_save(con, metas, user, &args),
+        "frappe.client.set_value" => method_client_set_value(con, metas, user, &args),
+        "frappe.client.delete" => method_client_delete(con, metas, user, &args),
         "frappe.client.get" => method_client_get(con, metas, user, &args),
         "frappe.client.get_value" => method_get_value(con, metas, user, &args),
         "frappe.client.get_single_value" => method_get_single_value(con, metas, user, &args),
@@ -1063,6 +1065,94 @@ fn is_truthy(v: &Value) -> bool {
         Value::Number(n) => n.as_f64().map(|f| f != 0.0).unwrap_or(false),
         Value::String(s) => !s.is_empty() && s != "0" && s != "false",
         _ => false,
+    }
+}
+
+/// Resolve WRITE/DELETE permission for a `frappe.client.*` write, with if_owner row scoping.
+/// Returns Err(403) when the grant is missing or the user doesn't own an if_owner-scoped doc.
+fn write_perm(con: &Connection, meta: &Meta, user: &str, name: &str, ptype: &str) -> Result<(), (u16, Value)> {
+    let perm = auth::permission(con, meta, user, ptype);
+    if !perm.allowed {
+        return Err((403, json!({
+            "exc_type": "PermissionError",
+            "message": format!("No '{ptype}' permission for {user} on {}", meta.name),
+        })));
+    }
+    if perm.only_if_owner {
+        if let Some(o) = orm::doc_owner(con, meta, name) {
+            if !auth::owns(&o, user) {
+                return Err((403, json!({
+                    "exc_type": "PermissionError",
+                    "message": format!("No '{ptype}' permission for {user} on {} {name}", meta.name),
+                })));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `frappe.client.set_value(doctype, name, fieldname, value)` — set one field (or many, when
+/// `fieldname` is a JSON object) on an existing doc. Write-perm gated; returns the updated doc.
+fn method_client_set_value(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+    let doctype = match args.get("doctype") {
+        Some(d) => d.clone(),
+        None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
+    };
+    let name = match args.get("name") {
+        Some(n) => n.clone(),
+        None => return (417, json!({"exc_type": "ValidationError", "message": "name required"})),
+    };
+    let meta = match get_meta(metas, con, &doctype) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    if let Err(e) = write_perm(con, &meta, user, &name, "write") {
+        return e;
+    }
+    // fieldname may be a JSON object {f: v, ...} (multi-field) or a single fieldname + value.
+    let mut data: Map<String, Value> = Map::new();
+    match args.get("fieldname") {
+        Some(fn_raw) => match serde_json::from_str::<Value>(fn_raw) {
+            Ok(Value::Object(o)) => data = o,
+            _ => {
+                let v = args
+                    .get("value")
+                    .map(|s| serde_json::from_str::<Value>(s).unwrap_or_else(|_| Value::from(s.clone())))
+                    .unwrap_or(Value::Null);
+                data.insert(bare_field(fn_raw), v);
+            }
+        },
+        None => return (417, json!({"exc_type": "ValidationError", "message": "fieldname required"})),
+    }
+    let acl = ReadAcl {
+        permlevels: auth::readable_permlevels(con, &meta, user),
+    };
+    match orm::update(con, &meta, &acl, &name, &data, user) {
+        Ok(doc) => message(doc),
+        Err(e) => map_orm_err(e),
+    }
+}
+
+/// `frappe.client.delete(doctype, name)` — delete-perm gated; returns null like Frappe.
+fn method_client_delete(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+    let doctype = match args.get("doctype") {
+        Some(d) => d.clone(),
+        None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
+    };
+    let name = match args.get("name") {
+        Some(n) => n.clone(),
+        None => return (417, json!({"exc_type": "ValidationError", "message": "name required"})),
+    };
+    let meta = match get_meta(metas, con, &doctype) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    if let Err(e) = write_perm(con, &meta, user, &name, "delete") {
+        return e;
+    }
+    match orm::delete(con, &meta, &name) {
+        Ok(()) => message(Value::Null),
+        Err(e) => map_orm_err(e),
     }
 }
 
