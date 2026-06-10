@@ -1186,7 +1186,9 @@ fn route_v2_document(
                     if has_next {
                         rows.truncate(page_len as usize);
                     }
-                    (200, json!({ "data": rows, "has_next_page": has_next }))
+                    let mut rows_v = Value::Array(rows);
+                    apply_expand_list(con, app, &ident.user, &meta, &mut rows_v, params); // FIX-3
+                    (200, json!({ "data": rows_v, "has_next_page": has_next }))
                 }
                 Ok(other) => (200, json!({ "data": other, "has_next_page": false })),
                 Err(e) => map_orm_err_v2(dev, e),
@@ -1197,7 +1199,12 @@ fn route_v2_document(
                 return err_v2(dev, 403, "PermissionError", format!("No permission for {} {n}", meta.name));
             }
             match orm::get_doc(con, &meta, &acl, &n) {
-                Ok(data) => (200, json!({ "data": data })),
+                Ok(mut data) => {
+                    if param_truthy(params.get("expand_links")) {
+                        expand_doc_links(con, app, &ident.user, &meta, &mut data, None); // FIX-3
+                    }
+                    (200, json!({ "data": data }))
+                }
                 Err(e) => map_orm_err_v2(dev, e),
             }
         }
@@ -1722,7 +1729,10 @@ fn route_resource(
             let q = build_list_query(params);
             let owner_scope = if perm.only_if_owner { Some(ident.user.as_str()) } else { None };
             match orm::get_list(con, &meta, &acl, &q, owner_scope) {
-                Ok(data) => (200, json!({ "data": data })),
+                Ok(mut data) => {
+                    apply_expand_list(con, app, &ident.user, &meta, &mut data, params); // FIX-3
+                    (200, json!({ "data": data }))
+                }
                 Err(e) => map_orm_err(dev, e),
             }
         }
@@ -1731,7 +1741,12 @@ fn route_resource(
                 return err(dev, 403, "PermissionError", format!("No permission for {} {n}", meta.name));
             }
             match orm::get_doc(con, &meta, &acl, &n) {
-                Ok(data) => (200, json!({ "data": data })),
+                Ok(mut data) => {
+                    if param_truthy(params.get("expand_links")) {
+                        expand_doc_links(con, app, &ident.user, &meta, &mut data, None); // FIX-3
+                    }
+                    (200, json!({ "data": data }))
+                }
                 Err(e) => map_orm_err(dev, e),
             }
         }
@@ -1780,6 +1795,92 @@ fn route_resource(
             }
         }
         (m, _) => err(dev, 405, "MethodNotAllowed", format!("{m} not allowed here")),
+    }
+}
+
+/// A query param is truthy if it's a non-empty value other than "0"/"false"/"no".
+fn param_truthy(v: Option<&String>) -> bool {
+    matches!(v.map(|s| s.trim().to_lowercase()), Some(ref s) if !s.is_empty() && s != "0" && s != "false" && s != "no")
+}
+
+/// Replace Link / Dynamic Link field values in a doc dict with the full linked doc (Frappe's
+/// expand / expand_links). `only`=Some(fields) expands just those; None expands every link field.
+/// Each linked doc is read-permission gated + permlevel-masked for `user`.
+fn expand_doc_links(
+    con: &Connection,
+    app: &App,
+    user: &str,
+    meta: &meta::Meta,
+    doc: &mut Value,
+    only: Option<&[String]>,
+) {
+    let obj = match doc.as_object_mut() {
+        Some(o) => o,
+        None => return,
+    };
+    // Collect targets first (immutable borrow), then substitute (mutable borrow).
+    let mut jobs: Vec<(String, String, String)> = Vec::new();
+    for f in &meta.fields {
+        if !matches!(f.fieldtype.as_str(), "Link" | "Dynamic Link") {
+            continue;
+        }
+        if let Some(sel) = only {
+            if !sel.iter().any(|s| s == &f.fieldname) {
+                continue;
+            }
+        }
+        let val = match obj.get(&f.fieldname).and_then(|v| v.as_str()) {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => continue,
+        };
+        let target = match f.fieldtype.as_str() {
+            "Link" => match f.options.as_deref() {
+                Some(o) if !o.is_empty() && o != "[Select]" => o.to_string(),
+                _ => continue,
+            },
+            "Dynamic Link" => match f.options.as_deref().and_then(|k| obj.get(k)).and_then(|v| v.as_str()) {
+                Some(dt) if !dt.is_empty() => dt.to_string(),
+                _ => continue,
+            },
+            _ => continue,
+        };
+        jobs.push((f.fieldname.clone(), target, val));
+    }
+    for (fname, target, val) in jobs {
+        let tmeta = match app.metas.get(con, &target) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !auth::permission(con, &tmeta, user, "read").allowed {
+            continue;
+        }
+        let acl = ReadAcl { permlevels: auth::readable_permlevels(con, &tmeta, user) };
+        if let Ok(linked) = orm::get_doc(con, &tmeta, &acl, &val) {
+            obj.insert(fname, linked);
+        }
+    }
+}
+
+/// Apply a list-level `expand` param (JSON list of link fieldnames) to each row of a list result.
+fn apply_expand_list(
+    con: &Connection,
+    app: &App,
+    user: &str,
+    meta: &meta::Meta,
+    data: &mut Value,
+    params: &HashMap<String, String>,
+) {
+    let fields: Vec<String> = match params.get("expand").and_then(|s| serde_json::from_str::<Value>(s).ok()) {
+        Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
+        _ => return,
+    };
+    if fields.is_empty() {
+        return;
+    }
+    if let Some(rows) = data.as_array_mut() {
+        for row in rows {
+            expand_doc_links(con, app, user, meta, row, Some(&fields));
+        }
     }
 }
 
