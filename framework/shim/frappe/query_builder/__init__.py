@@ -100,6 +100,17 @@ def _lit(v):
     return "'" + str(v).replace("'", "''") + "'"
 
 
+def _crit_sql(c):
+    if c is None:
+        return None
+    if hasattr(c, "get_sql"):
+        s = c.get_sql()
+    else:
+        s = str(c)
+    s = (s or "").strip()
+    return s or None
+
+
 class Criterion:
     def __init__(self, sql):
         self.sql = sql
@@ -107,10 +118,43 @@ class Criterion:
         return Criterion(f'({self.sql}) AND ({other.sql})')
     def __or__(self, other):
         return Criterion(f'({self.sql}) OR ({other.sql})')
+    def __invert__(self):
+        return Criterion(f'NOT ({self.sql})')
     def __str__(self):
         return self.sql
     def get_sql(self, **k):
         return self.sql
+
+    # pypika combinators: Criterion.any([...]) -> OR, Criterion.all([...]) -> AND. App controllers
+    # (e.g. crm.api.views.get_views) import these from pypika; without a real implementation the
+    # `from pypika import Criterion` stub made them no-ops and the WHERE rendered an empty "()".
+    @staticmethod
+    def any(criteria=None):
+        parts = [s for s in (_crit_sql(c) for c in (criteria or [])) if s]
+        if not parts:
+            return None
+        return Criterion(" OR ".join(f'({p})' for p in parts))
+
+    @staticmethod
+    def all(criteria=None):
+        parts = [s for s in (_crit_sql(c) for c in (criteria or [])) if s]
+        if not parts:
+            return None
+        return Criterion(" AND ".join(f'({p})' for p in parts))
+
+
+class _OrderVal:
+    """pypika.Order member stand-in: carries a SQL direction in `.value` (Query.orderby reads
+    getattr(order, 'value', order))."""
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return self.value
+
+
+class Order:
+    asc = _OrderVal("ASC")
+    desc = _OrderVal("DESC")
 
 
 class Table:
