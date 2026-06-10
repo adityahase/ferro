@@ -112,6 +112,7 @@ fn main() {
         Some("serve") => serve(&args[2..]),
         Some("provision-key") => provision(&args[2..]),
         Some("request") => request_cli(&args[2..]),
+        Some("install-hooks") => install_hooks_cli(&args[2..]),
         Some("bench") => bench::dispatch(&args[2..]),
         Some(db) if args.len() == 2 => smoke(db),
         _ => {
@@ -400,6 +401,58 @@ fn provision(args: &[String]) {
 }
 
 /// In-process request: exercises the full route()/auth/meta/orm stack without a socket.
+/// `ferro install-hooks <site-dir-or-db> [app ...]` — run installed apps' `after_install` hooks so
+/// their seed/master data exists (CRM statuses, fields layouts, …). Native `install-app` only
+/// materialises schema; this runs the Python hook via the embedded interpreter (python build only).
+/// Provisioning calls it once after install-app so app frontends find the data they expect.
+fn install_hooks_cli(args: &[String]) {
+    let path = match args.first() {
+        Some(p) => p.clone(),
+        None => {
+            eprintln!("usage: ferro install-hooks <site-dir-or-db> [app ...]");
+            std::process::exit(2);
+        }
+    };
+    // Explicit app list overrides the site's installed_apps (frappe itself has no app seed to run).
+    let mut apps: Vec<String> = args[1..].iter().filter(|a| !a.starts_with('-')).cloned().collect();
+    if apps.is_empty() {
+        apps = load_installed_apps(&path).into_iter().filter(|a| a != "frappe").collect();
+    }
+    if apps.is_empty() {
+        eprintln!("ferro install-hooks: no non-frappe apps to seed");
+        return;
+    }
+
+    #[cfg(feature = "python")]
+    {
+        let db_path = resolve_db_path(&path);
+        let con = open_conn(&db_path);
+        let metas = Arc::new(MetaCache::new(512));
+        match pyfall::PyFall::boot(&db_path, metas, &apps) {
+            Ok(pf) => match pf.run_after_install(&con, &apps) {
+                Ok(summary) => {
+                    println!("ferro install-hooks: {summary}");
+                    let _ = con.execute_batch("COMMIT;"); // flush any open implicit txn
+                }
+                Err(e) => {
+                    eprintln!("ferro install-hooks: hook run failed: {e}");
+                    std::process::exit(1);
+                }
+            },
+            Err(e) => {
+                eprintln!("ferro install-hooks: interpreter boot failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+    #[cfg(not(feature = "python"))]
+    {
+        let _ = &apps;
+        eprintln!("ferro install-hooks: this binary was built without --features python; use ferro-py");
+        std::process::exit(1);
+    }
+}
+
 fn request_cli(args: &[String]) {
     let path = args.first().expect("need <site-dir-or-db>");
     let method = args.get(1).map(|s| s.to_uppercase()).unwrap_or_else(|| "GET".into());

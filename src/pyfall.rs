@@ -59,6 +59,21 @@ impl PyFall {
     pub fn count(&self) -> usize {
         self.whitelisted.len()
     }
+
+    /// Run each app's `after_install` hook against `con` (so the app's seed/master data — default
+    /// statuses, fields layouts, … — is created). Returns the JSON summary the shim produces.
+    pub fn run_after_install(&self, con: &Connection, apps: &[String]) -> PyResult<String> {
+        pyrt::set_request_con(con);
+        pyrt::set_user("Administrator");
+        let apps_json = serde_json::to_string(apps).unwrap_or_else(|_| "[]".into());
+        let out = Python::with_gil(|py| -> PyResult<String> {
+            let boot = py.import("ferro_boot")?;
+            let res = boot.call_method1("run_after_install", (apps_json,))?;
+            res.extract::<String>()
+        });
+        pyrt::clear_request_con();
+        out
+    }
     pub fn has(&self, method: &str) -> bool {
         self.whitelisted.contains(method)
     }
