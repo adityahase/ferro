@@ -312,9 +312,20 @@ pub fn user_for_sid(con: &Connection, sid: &str) -> Option<String> {
         }
     }
     if user.is_empty() || user == "Guest" {
-        None
-    } else {
+        return None;
+    }
+    // A still-valid sid must not outlive the account: a disabled/deleted user gets no access.
+    let enabled: bool = con
+        .query_row(
+            "SELECT 1 FROM \"tabUser\" WHERE name=?1 AND COALESCE(enabled,1)=1",
+            [&user],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if enabled {
         Some(user)
+    } else {
+        None
     }
 }
 

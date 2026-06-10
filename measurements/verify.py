@@ -209,6 +209,21 @@ def run_tests():
     check("admin getdoc User -> 200 (desk form preserved)", s==200, f"{s} {b}")
     s,b = req("POST","/api/method/frappe.client.save", {"doc":{"doctype":"Role","role_name":"ferro-hack-role"}}, token=TTOK, desk=True)
     check("client.save without create perm -> 403 (no write bypass)", s==403, f"{s} {b}")
+    # Desk-UI methods must not leak to a non-Desk user (adversarial-review findings).
+    s,b = req("GET", "/api/method/frappe.desk.desktop.get_workspace_sidebar_items", user="Guest", desk=True)
+    check("Guest workspace sidebar -> empty (no nav leak)", s==200 and b.get("message",{}).get("pages")==[] and b.get("message",{}).get("has_access") is False, f"{s} {b}")
+    s,b = req("GET", "/api/method/frappe.desk.desktop.get_workspace_sidebar_items", user=ADMIN, desk=True)
+    check("admin workspace sidebar -> pages (desk preserved)", s==200 and len(b.get("message",{}).get("pages",[]))>0, f"{s} {b}")
+    s,b = req("POST","/api/method/frappe.desk.doctype.number_card.number_card.get_result", {"document_type":"User"}, user="Guest", desk=True)
+    check("Guest number_card count -> 0 (no count oracle)", s==200 and b.get("message")==0, f"{s} {b}")
+    s,b = req("POST","/api/method/frappe.desk.doctype.number_card.number_card.get_result", {"document_type":"User"}, user=ADMIN, desk=True)
+    check("admin number_card count -> real number", s==200 and isinstance(b.get("message"),int) and b["message"]>=1, f"{s} {b}")
+    # set_value write-mask (a permlevel-0 writer can't change a permlevel-1 field via set_value).
+    s,b = req("POST","/api/resource/Note", {"title":"ferro-note-sv"}, token=TTOK)
+    svn = b.get("data",{}).get("name")
+    req("POST","/api/method/frappe.client.set_value", {"doctype":"Note","name":svn,"fieldname":"note_secret","value":"LEAK"}, token=TTOK, desk=True)
+    s,b = req("GET", f"/api/resource/Note/{svn}", user=ADMIN)
+    check("client.set_value masks a permlevel-1 field for a permlevel-0 writer", b.get("data",{}).get("note_secret") is None, f"got {b.get('data',{}).get('note_secret')!r}")
 
     print("\n[filter shapes (B-FIL-1/2/3)]")
     s,b = req("GET", '/api/resource/User?fields=["name"]&filters=[["name","in","[\\"Administrator\\",\\"Guest\\"]"]]', user=ADMIN)
@@ -417,6 +432,12 @@ def run_tests():
     print("\n[single doctype]")
     s,b = req("GET","/api/resource/Domain Settings/Domain Settings", user=ADMIN)
     check("single read ok + has docstatus/idx", s==200 and "docstatus" in b.get("data",{}) and "idx" in b.get("data",{}), f"{s} {b}")
+    # Single write path validates Link fields too (B-DOC-1) and rolls back on failure.
+    s,b = req("PUT","/api/resource/System Settings/System Settings", {"country":"__NO_SUCH_COUNTRY__"}, user=ADMIN)
+    check("bad Link on a Single -> 417 (single link validation)", s==417, f"{s} {b}")
+    # Single get_list rejects an unknown field like the non-single path.
+    s,b = req("GET",'/api/resource/System Settings?fields=["__nope__"]', user=ADMIN)
+    check("Single get_list unknown field -> 417", s==417, f"{s} {b}")
 
     print("\n[db-api: client.get_value / get_single_value (B-DB-1/2)]")
     # multi-field get_value returns all requested fields as a dict
@@ -470,6 +491,9 @@ def run_tests():
         check("write in maintenance mode -> 503 errors[] (v2)", s==503 and isinstance(b.get("errors"),list), f"{s} {b}")
         s,b = req("GET","/api/resource/DocType?limit_page_length=1", user=ADMIN)
         check("read still works in maintenance mode -> 200", s==200, f"{s} {b}")
+        # the mutating METHOD surface (desk save / client write) is blocked too, not just /api/resource.
+        s,b = req("POST","/api/method/frappe.client.save", {"doc":{"doctype":"ToDo","description":"ferro-verify-ro"}}, user=ADMIN, desk=True)
+        check("client.save in maintenance mode -> 503 (method write gated)", s==503, f"{s} {b}")
     finally:
         json.dump(_cfg, open(cfg_path, "w"))
 

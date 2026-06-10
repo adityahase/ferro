@@ -349,6 +349,10 @@ pub fn get_list(
             for f in &q.fields {
                 let f = f.trim().trim_matches('`');
                 let f = f.rsplit('.').next().unwrap_or(f);
+                // Match the non-Single path: an unknown field is a validation error, not a silent null.
+                if !meta.has_column(f) {
+                    return Err(OrmError::Validation(format!("Unknown field '{f}' for {}", meta.name)));
+                }
                 o.insert(f.to_string(), src.get(f).cloned().unwrap_or(Value::Null));
             }
             Value::Object(o)
@@ -1054,6 +1058,9 @@ pub fn update(
 }
 
 fn update_single(con: &Connection, meta: &Meta, data: &Map<String, Value>, user: &str) -> Result<(), OrmError> {
+    // Single doctypes go through this path for both insert and update; validate their Link fields
+    // here too (B-DOC-1) so a Single can't store a dangling reference.
+    validate_links(con, meta, data)?;
     let now = util::now_datetime();
     let set_field = |field: &str, value: &str| -> Result<(), OrmError> {
         con.execute(

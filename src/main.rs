@@ -1105,6 +1105,11 @@ fn route(
     match segments.get(1).map(|s| s.as_str()) {
         Some("method") => {
             let mname = segments.get(2).map(|s| s.as_str()).unwrap_or("");
+            // B-REST-4: read-only mode also blocks the document-mutating method surface (the desk
+            // save / client.set_value / client.delete / bulk paths), not just /api/resource.
+            if app.maintenance_mode && method_is_write(mname) {
+                return err(app.dev, 503, "InReadOnlyMode", "Site is in read-only mode".into());
+            }
             // ferro's own introspection / job-control methods for the internal backend subsystems.
             if let Some(r) = ferro_method(app, &ident, mname, &params) {
                 return r;
@@ -1321,6 +1326,24 @@ fn route_v2_document(
         }
         (m, _) => err_v2(dev, 405, "MethodNotAllowed", format!("{m} not allowed here")),
     }
+}
+
+/// Whitelisted method names that MUTATE the database — blocked in maintenance/read-only mode.
+fn method_is_write(mname: &str) -> bool {
+    matches!(
+        mname,
+        "frappe.client.save"
+            | "frappe.client.insert"
+            | "frappe.client.set_value"
+            | "frappe.client.delete"
+            | "frappe.client.submit"
+            | "frappe.client.cancel"
+            | "frappe.client.bulk_update"
+            | "frappe.client.bulk_delete"
+            | "frappe.desk.form.save.savedocs"
+            | "bulk_delete"
+            | "bulk_update"
+    )
 }
 
 /// Human-readable message for an ORM error (per-item bulk failures).
@@ -1542,6 +1565,7 @@ fn v2_method_bulk_update(
         let mut data: Map<String, Value> = obj.clone();
         data.remove("doctype");
         data.remove("name");
+        mask_unwritable(con, &meta, &ident.user, &mut data); // write-path permlevel masking
         match orm::update(con, &meta, &acl, &nm, &data, &ident.user) {
             Ok(doc) => {
                 let modified = doc.get("modified").and_then(|v| v.as_str()).unwrap_or("");
@@ -1636,6 +1660,10 @@ fn route_v2_method(
     content_type: Option<&str>,
 ) -> (u16, Value) {
     let dev = app.dev;
+    // B-REST-4: read-only mode blocks the v2 mutating method surface too.
+    if app.maintenance_mode && method_is_write(mname) {
+        return err_v2(dev, 503, "InReadOnlyMode", "Site is in read-only mode".into());
+    }
     // v2 method names the frappe-ui boot calls directly.
     match mname {
         "ping" | "frappe.ping" => return (200, json!({ "data": "pong" })),

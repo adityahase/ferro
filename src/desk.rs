@@ -622,15 +622,15 @@ pub fn route_method(
         "frappe.desk.doctype.dashboard_settings.dashboard_settings.create_dashboard_settings" => {
             message(json!({ "name": user, "user": user, "chart_config": "{}" }))
         }
-        "frappe.desk.doctype.number_card.number_card.get_result" => method_number_card_result(con, metas, &args),
+        "frappe.desk.doctype.number_card.number_card.get_result" => method_number_card_result(con, metas, user, &args),
         "frappe.desk.doctype.number_card.number_card.get_percentage_difference" => message(Value::Null),
         "frappe.desk.doctype.dashboard_chart.dashboard_chart.get"
         | "frappe.desk.doctype.dashboard_chart.dashboard_chart.get_data" => message(json!({ "labels": [], "datasets": [] })),
 
         // ---- workspace (desktop) page content ----
-        "frappe.desk.desktop.get_desktop_page" => method_get_desktop_page(con, &args),
-        "frappe.desk.desktop.get_workspace_sidebar_items" => method_workspace_sidebar(con),
-        "frappe.desk.desk_page.getpage" => method_getpage(con, &args),
+        "frappe.desk.desktop.get_desktop_page" => method_get_desktop_page(con, metas, user, &args),
+        "frappe.desk.desktop.get_workspace_sidebar_items" => method_workspace_sidebar(con, metas, user),
+        "frappe.desk.desk_page.getpage" => method_getpage(con, metas, user, &args),
 
         // ---- form view ----
         "frappe.desk.form.load.getdoctype" => method_getdoctype(con, metas, &args),
@@ -784,6 +784,16 @@ fn strip_nulls(v: Value) -> Value {
     }
 }
 
+/// True iff `user` has read permission on `doctype`. Gates Desk-UI methods (workspace/desktop/page/
+/// number-card) that Frappe restricts to logged-in Desk users — so Guest gets empty navigation,
+/// not a leak of every workspace's layout or a row-count oracle. Administrator is always allowed.
+fn desk_can_read(con: &Connection, metas: &MetaCache, user: &str, doctype: &str) -> bool {
+    match metas.get(con, doctype) {
+        Ok(m) => auth::permission(con, &m, user, "read").allowed,
+        Err(_) => false,
+    }
+}
+
 /// Resolve READ permission + the field/row ACL for a `frappe.client.*` / `frappe.desk.reportview.*`
 /// read, mirroring `route_resource` so the desk-method path enforces the same gate as `/api/resource`.
 /// Returns `(field ACL, owner_scope)` — `owner_scope` is `Some(user)` when every grant is `if_owner`,
@@ -897,7 +907,7 @@ fn method_get_count(con: &Connection, metas: &MetaCache, user: &str, args: &Hash
 
 /// `frappe.desk.doctype.number_card.number_card.get_result` — the value shown on a workspace
 /// number card. We support the common "Count" function (document_type + filters -> row count).
-fn method_number_card_result(con: &Connection, metas: &MetaCache, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_number_card_result(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
     let card = args.get("doc").and_then(|d| serde_json::from_str::<Value>(d).ok()).unwrap_or(Value::Null);
     let doctype = card
         .get("document_type")
@@ -912,6 +922,12 @@ fn method_number_card_result(con: &Connection, metas: &MetaCache, args: &HashMap
         Ok(m) => m,
         Err(_) => return message(json!(0)),
     };
+    // Gate the count behind read permission (else it's an unauthenticated count oracle); on denial
+    // return 0, the way Frappe's get_list-based card result shows nothing to an unpermitted user.
+    let owner_scope = match read_perm(con, &meta, user) {
+        Ok((_, scope)) => scope,
+        Err(_) => return message(json!(0)),
+    };
     // filters: prefer the card's filters_json, fall back to the explicit `filters` arg.
     let filters = card
         .get("filters_json")
@@ -919,7 +935,7 @@ fn method_number_card_result(con: &Connection, metas: &MetaCache, args: &HashMap
         .and_then(|s| serde_json::from_str::<Value>(s).ok())
         .or_else(|| args.get("filters").and_then(|s| serde_json::from_str::<Value>(s).ok()))
         .unwrap_or(Value::Null);
-    match orm::count(con, &meta, &filters, None) {
+    match orm::count(con, &meta, &filters, owner_scope.as_deref()) {
         Ok(n) => message(json!(n)),
         Err(_) => message(json!(0)),
     }
@@ -1169,6 +1185,10 @@ fn method_client_set_value(con: &Connection, metas: &MetaCache, user: &str, args
         },
         None => return (417, json!({"exc_type": "ValidationError", "message": "fieldname required"})),
     }
+    // Write-path permlevel masking: a permlevel-0 writer can't set a higher-permlevel field here either.
+    if let Some(set) = auth::writable_permlevels(con, &meta, user) {
+        data.retain(|k, _| set.contains(&meta.field(k).map(|f| f.permlevel).unwrap_or(0)));
+    }
     let acl = ReadAcl {
         permlevels: auth::readable_permlevels(con, &meta, user),
     };
@@ -1330,7 +1350,15 @@ fn method_get_single_value(con: &Connection, metas: &MetaCache, user: &str, args
 }
 
 /// `frappe.desk.desktop.get_desktop_page` — resolve a workspace's widgets (cards/charts/etc).
-fn method_get_desktop_page(con: &Connection, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_get_desktop_page(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+    // Desk-UI gate: only a Workspace-reader (Desk user) gets workspace widget config.
+    if !desk_can_read(con, metas, user, "Workspace") {
+        return (200, json!({ "message": {
+            "charts": {"items": []}, "shortcuts": {"items": []}, "cards": {"items": []},
+            "onboardings": {"items": []}, "quick_lists": {"items": []},
+            "number_cards": {"items": []}, "custom_blocks": {"items": []},
+        }}));
+    }
     // `page` is a JSON object describing the workspace; we only need its name.
     let name = args
         .get("page")
@@ -1386,7 +1414,11 @@ fn build_card_groups(con: &Connection, workspace: &str) -> Value {
 }
 
 /// `frappe.desk.desktop.get_workspace_sidebar_items` — the list of workspace pages for the sidebar.
-fn method_workspace_sidebar(con: &Connection) -> (u16, Value) {
+fn method_workspace_sidebar(con: &Connection, metas: &MetaCache, user: &str) -> (u16, Value) {
+    // Desk-UI gate: Guest/non-Desk users get an empty sidebar, not the full workspace list.
+    if !desk_can_read(con, metas, user, "Workspace") {
+        return message(json!({ "pages": [], "has_access": false, "has_create_access": false }));
+    }
     let pages = child_rows_query(
         con,
         "SELECT * FROM \"tabWorkspace\" WHERE COALESCE(public,0)=1 AND COALESCE(is_hidden,0)=0 ORDER BY sequence_id, name",
@@ -1396,7 +1428,11 @@ fn method_workspace_sidebar(con: &Connection) -> (u16, Value) {
 }
 
 /// `frappe.desk.desk_page.getpage` — a single workspace page document.
-fn method_getpage(con: &Connection, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_getpage(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+    // Desk-UI gate: a workspace page is Desk-user content.
+    if !desk_can_read(con, metas, user, "Workspace") {
+        return message(json!({}));
+    }
     let name = args.get("name").cloned().unwrap_or_default();
     match row_as_object(con, "tabWorkspace", "name", &name) {
         Ok(Some(doc)) => message(doc),
