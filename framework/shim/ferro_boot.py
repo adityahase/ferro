@@ -423,6 +423,27 @@ def run_after_install(apps_json):
     return json.dumps({"ran": done, "errors": errors})
 
 
+def run_setup_wizard(args_json):
+    """Run ERPNext's programmatic setup_complete(args) so a fresh site gets a Company + Chart of
+    Accounts + defaults (the interactive wizard's outcome). Once a Company exists, ERPNext reports
+    setup as complete and the Desk wizard correctly stays hidden. Returns a JSON status."""
+    args = json.loads(args_json) if args_json else {}
+    try:
+        mod = importlib.import_module("erpnext.setup.setup_wizard.setup_wizard")
+    except Exception as e:
+        return json.dumps({"ok": False, "error": f"import: {e}"})
+    fn = getattr(mod, "setup_complete", None)
+    if fn is None:
+        return json.dumps({"ok": False, "error": "setup_complete not found"})
+    try:
+        fn(args)
+        return json.dumps({"ok": True})
+    except Exception as e:
+        if os.environ.get("FERRO_TRACE"):
+            traceback.print_exc()
+        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+
 def whitelisted_methods_json():
     """The map ferro pulls at boot to gate auto-routing. Sorted list of dotted paths."""
     return json.dumps(sorted(_WHITELISTED))

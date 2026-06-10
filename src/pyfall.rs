@@ -116,6 +116,20 @@ impl PyFall {
         pyrt::clear_request_con();
         out
     }
+    /// Run ERPNext's programmatic setup_complete(args) so a fresh site gets a Company + CoA +
+    /// defaults. `args_json` carries company_name/country/currency/chart_of_accounts/fy dates.
+    pub fn run_setup_wizard(&self, con: &Connection, args_json: &str) -> PyResult<String> {
+        self.ensure_interp().map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+        pyrt::set_request_con(con);
+        pyrt::set_user("Administrator");
+        let out = Python::with_gil(|py| -> PyResult<String> {
+            let boot = py.import("ferro_boot")?;
+            boot.call_method1("run_setup_wizard", (args_json,))?.extract::<String>()
+        });
+        pyrt::clear_request_con();
+        out
+    }
+
     pub fn has(&self, method: &str) -> bool {
         self.whitelisted.contains(method)
     }

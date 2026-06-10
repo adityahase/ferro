@@ -113,6 +113,7 @@ fn main() {
         Some("provision-key") => provision(&args[2..]),
         Some("request") => request_cli(&args[2..]),
         Some("install-hooks") => install_hooks_cli(&args[2..]),
+        Some("setup-wizard") => setup_wizard_cli(&args[2..]),
         Some("bench") => bench::dispatch(&args[2..]),
         Some(db) if args.len() == 2 => smoke(db),
         _ => {
@@ -465,6 +466,80 @@ fn install_hooks_cli(args: &[String]) {
     {
         let _ = &apps;
         eprintln!("ferro install-hooks: this binary was built without --features python; use ferro-py");
+        std::process::exit(1);
+    }
+}
+
+/// `ferro setup-wizard <site-dir-or-db> [json-args]` — run ERPNext's programmatic setup_complete so
+/// a fresh site gets a Company + Chart of Accounts + defaults (the wizard's outcome). Once a Company
+/// exists ERPNext reports setup complete, so the Desk wizard correctly stays hidden. python build only.
+fn setup_wizard_cli(args: &[String]) {
+    let path = match args.first() {
+        Some(p) => p.clone(),
+        None => {
+            eprintln!("usage: ferro setup-wizard <site-dir-or-db> [json-args]");
+            std::process::exit(2);
+        }
+    };
+    // Default wizard answers (overridable via a JSON arg). A US Standard chart is the safe default.
+    let mut wargs = serde_json::json!({
+        "company_name": "My Company",
+        "company_abbr": "MC",
+        "country": "United States",
+        "currency": "USD",
+        "chart_of_accounts": "Standard",
+        "language": "en",
+        "timezone": "America/New_York",
+        "fy_start_date": "2026-01-01",
+        "fy_end_date": "2026-12-31",
+        "setup_demo": 0
+    });
+    if let Some(extra) = args.get(1).filter(|a| !a.starts_with('-')) {
+        if let Ok(Value::Object(m)) = serde_json::from_str::<Value>(extra) {
+            if let Value::Object(base) = &mut wargs {
+                for (k, v) in m {
+                    base.insert(k, v);
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "python")]
+    {
+        let db_path = resolve_db_path(&path);
+        let con = open_conn(&db_path);
+        let metas = Arc::new(MetaCache::new(512));
+        let apps: Vec<String> = load_installed_apps(&path).into_iter().filter(|a| a != "frappe").collect();
+        let pf = match pyfall::PyFall::boot(&db_path, metas, &apps) {
+            Ok(pf) => pf,
+            Err(e) => {
+                eprintln!("ferro setup-wizard: interpreter boot failed: {e}");
+                std::process::exit(1);
+            }
+        };
+        match pf.run_setup_wizard(&con, &wargs.to_string()) {
+            Ok(summary) => {
+                println!("ferro setup-wizard: {summary}");
+                let _ = con.execute_batch("COMMIT;");
+                // any custom fields / new doctypes created during setup get their columns synced
+                let dts: Vec<String> = con
+                    .prepare("SELECT DISTINCT dt FROM \"tabCustom Field\"")
+                    .and_then(|mut s| s.query_map([], |r| r.get::<_, String>(0)).map(|r| r.filter_map(|x| x.ok()).collect()))
+                    .unwrap_or_default();
+                for dt in &dts {
+                    let _ = schema::sync_table(&con, dt);
+                }
+            }
+            Err(e) => {
+                eprintln!("ferro setup-wizard: failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+    #[cfg(not(feature = "python"))]
+    {
+        let _ = &wargs;
+        eprintln!("ferro setup-wizard: this binary was built without --features python; use ferro-py");
         std::process::exit(1);
     }
 }
