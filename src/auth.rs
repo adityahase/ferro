@@ -140,21 +140,38 @@ fn custom_docperm_excluded(name: &str) -> bool {
 }
 
 /// Collect the user's roles plus the implicit ones Frappe always grants.
+///
+/// Mirrors `frappe/permissions.py get_roles`: Guest gets only `["Guest"]` (never `All`);
+/// a normal user gets their `Has Role` rows (minus the AUTOMATIC_ROLES) plus the implicit
+/// `["All","Guest"]`, plus `["Desk User"]` iff `User.user_type == "System User"`.
+/// (Administrator is special-cased by the callers and never reaches here.)
 fn user_roles(con: &Connection, user: &str) -> Vec<String> {
-    let mut roles: Vec<String> = vec!["All".to_string()];
-    // Frappe grants the Guest role to everyone for read of guest-allowed doctypes; the explicit
-    // Guest user always has it. We add it for Guest only (others get All).
+    // Guest never gets the "All" role (Frappe: get_roles("Guest") == ["Guest"]).
     if user == "Guest" {
-        roles.push("Guest".to_string());
+        return vec!["Guest".to_string()];
     }
-    if let Ok(mut stmt) =
-        con.prepare("SELECT role FROM \"tabHas Role\" WHERE parent=?1 AND parenttype='User'")
-    {
+    let mut roles: Vec<String> = Vec::new();
+    if let Ok(mut stmt) = con.prepare(
+        "SELECT role FROM \"tabHas Role\" \
+         WHERE parent=?1 AND parenttype='User' \
+           AND role NOT IN ('All','Guest','Desk User','Administrator')",
+    ) {
         if let Ok(rows) = stmt.query_map([user], |r| r.get::<_, String>(0)) {
-            for r in rows.flatten() {
-                roles.push(r);
-            }
+            roles.extend(rows.flatten());
         }
+    }
+    roles.push("All".to_string());
+    roles.push("Guest".to_string());
+    // "Desk User" only for System Users (relevant for desk-only doctype perms).
+    let is_system: bool = con
+        .query_row(
+            "SELECT 1 FROM \"tabUser\" WHERE name=?1 AND user_type='System User'",
+            [user],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if is_system {
+        roles.push("Desk User".to_string());
     }
     roles
 }
