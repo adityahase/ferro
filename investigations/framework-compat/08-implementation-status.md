@@ -37,6 +37,31 @@ deterministic across runs. Each fix is its own focused commit on `fix/signup-app
 transaction, so a failed insert rolls back the `tabSeries` counter increment atomically — no
 separate revert needed.
 
+## Adversarial-verification hardening (round 2)
+
+After the plan was applied, a multi-agent adversarial workflow (7 hunters over read-bypass /
+write-bypass / session / SQLi / fidelity / regression / orm-edge, each finding independently
+triaged) + a manual sweep found **12 additional issues**, all fixed + locked:
+
+| # | Issue | Fix |
+|---|---|---|
+| desk getdoc | `frappe.desk.form.load.getdoc` read any doc unchecked | read_perm + if_owner gate |
+| desk save | `client.save`/`savedocs`/`insert` wrote any doctype unchecked | create/write perm (+if_owner) gate |
+| number_card | `number_card.get_result` was an unauth count oracle | read-gate, return 0 on denial, if_owner-scoped |
+| desktop/sidebar/getpage | leaked workspace layout + nav to Guest | gated on Workspace read (`desk_can_read`) |
+| set_value mask | `client.set_value` could set a permlevel-1 field | writable_permlevels masking |
+| bulk_update mask | v2 `bulk_update` could set a permlevel-1 field | mask_unwritable |
+| disabled session | a disabled/deleted user's sid kept working | `user_for_sid` re-checks `enabled` |
+| maintenance methods | read-only mode only gated CRUD URLs | block `method_is_write` on v1+v2 method paths |
+| single links | Single writes skipped Link validation | `update_single` validates links (txn rollback) |
+| single get_list | Single list silently nulled unknown fields | reject unknown field (417) like the table path |
+
+A focused second pass re-verified all twelve and swept every data/count-returning handler again:
+**clean** — the remaining unrestricted methods (`getdoctype`, `build_meta_doc`, `get_all_roles`,
+empty docinfo) return schema/role-name metadata only, which Frappe's Desk also serves to any
+authenticated user. Every gate is a no-op for Administrator, so the admin-default deployment is
+unaffected. Suite after hardening: **113 passing, 0 failing**.
+
 ## Deliberately scoped out (minimalism directive: "as few changes as possible, don't reimplement
 unnecessary parts, keep the memory footprint low")
 
