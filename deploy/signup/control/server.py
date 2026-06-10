@@ -141,6 +141,13 @@ SPA_APPS = {"crm", "gameplan", "helpdesk"}
 # Each SPA app's entry route (its hooks.py website_route_rules base), for post-signup deep links.
 APP_ROUTES = {"crm": "/crm", "gameplan": "/g", "helpdesk": "/helpdesk"}
 
+# Canonical display names — acronyms / mixed case the UI can't infer from the bare app name.
+APP_LABEL = {"erpnext": "ERPNext", "hrms": "HRMS", "crm": "CRM",
+             "helpdesk": "Helpdesk", "gameplan": "Gameplan"}
+
+def app_label(name):
+    return APP_LABEL.get(name, name.capitalize())
+
 
 def _count_jsons(appdir, segment):
     n = 0
@@ -441,11 +448,12 @@ def provision(sub, apps):
             _ok(s, "278 frappe-core doctypes")
 
             for app in apps:
-                s = _step(job, f"app:{app}", f"materialising {app} schema")
+                lbl = app_label(app)
+                s = _step(job, f"app:{lbl}", f"materialising {lbl} schema")
                 rc, out = ferro(["install-app", app, "--site", host], env=env, cwd=forge, timeout=180)
                 if rc != 0:
                     raise RuntimeError(f"install-app {app} failed:\n{out[-1500:]}")
-                _ok(s, f"{app} installed ({REGISTRY.get(app,{}).get('doctypes','?')} doctypes)")
+                _ok(s, f"{lbl} installed ({REGISTRY.get(app,{}).get('doctypes','?')} doctypes)")
 
             s = _step(job, "workspaces", "building the Desk sidebar")
             if import_workspaces(forge, host, apps):

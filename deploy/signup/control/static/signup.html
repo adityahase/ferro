@@ -221,7 +221,7 @@ async function init(){
     return `
     <div class="app ${a.available?'':'off'}" data-app="${a.name}">
       <div class="tick"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke="#fff" stroke-width="2" fill="none"/></svg></div>
-      <div class="nm">${a.name}</div>
+      <div class="nm">${APP_LABELS[a.name]||a.name}</div>
       <div class="ds">${a.desc||''}</div>
       <div class="meta">${meta}</div>
     </div>`;}).join('');
@@ -296,7 +296,8 @@ async function poll(sub,host){
 }
 // SPA apps open at their own route (served live by the ferrod runtime tier), not inside Desk.
 const APP_ROUTES={crm:'/crm',gameplan:'/g',helpdesk:'/helpdesk'};
-const APP_LABELS={crm:'CRM',gameplan:'Gameplan',helpdesk:'Helpdesk'};
+// Display names for the app grid & deep-link buttons — acronyms the CSS `capitalize` can't get right.
+const APP_LABELS={crm:'CRM',erpnext:'ERPNext',hrms:'HRMS',gameplan:'Gameplan',helpdesk:'Helpdesk'};
 function success(host){
   $('#progress').classList.add('hide');
   $('#done').classList.remove('hide');
