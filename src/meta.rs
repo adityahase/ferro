@@ -125,7 +125,7 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
             rusqlite::Error::QueryReturnedNoRows => MetaError::NotFound(doctype.to_string()),
             other => MetaError::Db(other),
         })?;
-    let (issingle, istable, is_virtual, autoname, naming_rule, title_field, sort_field, sort_order) =
+    let (issingle, istable, is_virtual, mut autoname, mut naming_rule, mut title_field, mut sort_field, mut sort_order) =
         row;
 
     let table = format!("tab{doctype}");
@@ -155,6 +155,41 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
             }
         }
     }
+
+    // 2b. Merge Custom Fields (per-site customizations) into the field list, ordered by idx —
+    //     Frappe's Meta.add_custom_fields. Without this the ORM can't see a custom field's
+    //     permlevel / Link options / reqd. The physical column already exists (adding a Custom
+    //     Field runs a schema migration), so this only adds the field METADATA.
+    if let Ok(mut stmt) = con.prepare(
+        "SELECT fieldname, COALESCE(fieldtype,'Data'), options, \
+         COALESCE(reqd,0), \"default\", COALESCE(permlevel,0) \
+         FROM \"tabCustom Field\" WHERE dt = ?1 ORDER BY idx",
+    ) {
+        if let Ok(rows) = stmt.query_map([doctype], |r| {
+            Ok(DocField {
+                fieldname: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                fieldtype: r.get::<_, String>(1)?,
+                options: r.get::<_, Option<String>>(2)?,
+                reqd: r.get::<_, Option<i64>>(3)?.unwrap_or(0) != 0,
+                default: r.get::<_, Option<String>>(4)?,
+                permlevel: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
+            })
+        }) {
+            for f in rows.flatten() {
+                if !f.fieldname.is_empty() && !fields.iter().any(|e| e.fieldname == f.fieldname) {
+                    fields.push(f);
+                }
+            }
+        }
+    }
+
+    // 2c. Apply Property Setters (per-site overrides) — Frappe's Meta.apply_property_setters.
+    //     Only the properties ferro's data plane consults are honored: doctype-level naming/sort,
+    //     and field-level fieldtype/options/reqd/default/permlevel.
+    apply_property_setters(
+        con, doctype, &mut fields,
+        &mut autoname, &mut naming_rule, &mut title_field, &mut sort_field, &mut sort_order,
+    );
 
     // 3. Physical columns. For a real table PRAGMA is the AUTHORITATIVE set (standard + docfield
     //    + custom columns that actually exist) — crucially it lists parent/parentfield/parenttype
@@ -196,6 +231,83 @@ fn load_meta(con: &Connection, doctype: &str) -> Result<Meta, MetaError> {
         fields,
         columns,
     })
+}
+
+/// Apply `tabProperty Setter` overrides for the data-plane properties ferro consults.
+/// Mirrors `Meta.apply_property_setters`: a row with `doctype_or_field='DocType'` overrides a
+/// doctype property; `='DocField'` overrides the named field's property. Values are strings in the
+/// DB; ferro casts the few it uses (reqd/permlevel are int-ish, the rest are strings).
+#[allow(clippy::too_many_arguments)]
+fn apply_property_setters(
+    con: &Connection,
+    doctype: &str,
+    fields: &mut [DocField],
+    autoname: &mut Option<String>,
+    naming_rule: &mut Option<String>,
+    title_field: &mut Option<String>,
+    sort_field: &mut String,
+    sort_order: &mut String,
+) {
+    let mut stmt = match con.prepare(
+        "SELECT COALESCE(doctype_or_field,''), field_name, COALESCE(property,''), value \
+         FROM \"tabProperty Setter\" WHERE doc_type = ?1",
+    ) {
+        Ok(s) => s,
+        Err(_) => return, // table absent on a minimal site — nothing to apply
+    };
+    let rows = match stmt.query_map([doctype], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, Option<String>>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, Option<String>>(3)?,
+        ))
+    }) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    for row in rows.flatten() {
+        let (dof, field_name, property, value) = row;
+        match dof.as_str() {
+            "DocType" => match property.as_str() {
+                "autoname" => *autoname = value,
+                "naming_rule" => *naming_rule = value,
+                "title_field" => *title_field = value,
+                "sort_field" => {
+                    if let Some(v) = value {
+                        *sort_field = v;
+                    }
+                }
+                "sort_order" => {
+                    if let Some(v) = value {
+                        *sort_order = v;
+                    }
+                }
+                _ => {}
+            },
+            "DocField" => {
+                let fname = match &field_name {
+                    Some(f) if !f.is_empty() => f,
+                    _ => continue,
+                };
+                if let Some(df) = fields.iter_mut().find(|d| &d.fieldname == fname) {
+                    match property.as_str() {
+                        "fieldtype" => {
+                            if let Some(v) = value {
+                                df.fieldtype = v;
+                            }
+                        }
+                        "options" => df.options = value,
+                        "default" => df.default = value,
+                        "reqd" => df.reqd = value.as_deref().map(|v| crate::util::cint(v) != 0).unwrap_or(false),
+                        "permlevel" => df.permlevel = value.as_deref().map(crate::util::cint).unwrap_or(0),
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Thread-safe, bounded LRU metadata cache. Entries are `Arc<Meta>` so callers clone the

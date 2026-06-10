@@ -77,6 +77,16 @@ def setup():
     # Custom DocPerm: User read permlevel 0 for Ferro Test (to test permlevel masking)
     ex("INSERT INTO \"tabCustom DocPerm\" (name,creation,modified,owner,modified_by,parent,role,permlevel,\"read\") "
        "VALUES ('frt-cdp-user',datetime('now'),datetime('now'),'Administrator','Administrator','User','Ferro Test',0,1)")
+    # B-MET-1: a permlevel-1 Custom Field on ToDo + its physical column (ADD COLUMN is idempotent-
+    # guarded by the try/except; cleanup drops it).
+    ex("ALTER TABLE tabToDo ADD COLUMN ferro_cf TEXT")
+    ex("DELETE FROM \"tabCustom Field\" WHERE name='frt-cf-1'")
+    ex("INSERT INTO \"tabCustom Field\" (name,creation,modified,owner,modified_by,dt,fieldname,label,fieldtype,permlevel,idx) "
+       "VALUES ('frt-cf-1',datetime('now'),datetime('now'),'Administrator','Administrator','ToDo','ferro_cf','Ferro CF','Data',1,99)")
+    # B-MET-2: a Property Setter raising User.birth_date (permlevel 0) to permlevel 1.
+    ex("DELETE FROM \"tabProperty Setter\" WHERE name='frt-ps-1'")
+    ex("INSERT INTO \"tabProperty Setter\" (name,creation,modified,owner,modified_by,doc_type,doctype_or_field,field_name,property,property_type,value) "
+       "VALUES ('frt-ps-1',datetime('now'),datetime('now'),'Administrator','Administrator','User','DocField','birth_date','permlevel','Int','1')")
     con.commit(); con.close()
 
 def cleanup():
@@ -90,6 +100,9 @@ def cleanup():
         "DELETE FROM tabRole WHERE name='Ferro Test'",
         "DELETE FROM tabToDo WHERE description LIKE 'ferro-verify-%'",
         "DELETE FROM \"tabConsole Log\" WHERE type='y'",
+        "DELETE FROM \"tabCustom Field\" WHERE name='frt-cf-1'",
+        "DELETE FROM \"tabProperty Setter\" WHERE name='frt-ps-1'",
+        "ALTER TABLE tabToDo DROP COLUMN ferro_cf",
     ]:
         try: cur.execute(s)
         except Exception as e: print("  cleanup warn:", e)
@@ -276,6 +289,20 @@ def run_tests():
     check("get_single_value returns the set value", s==200 and b.get("message")=="Frappe", f"{s} {b}")
     s,b = req("GET", '/api/method/frappe.client.get_single_value?doctype=System Settings&field=__nope__', user=ADMIN, desk=True)
     check("get_single_value unset field -> null not 0 (B-DB-2)", s==200 and b.get("message") is None, f"{s} {b}")
+
+    print("\n[meta: Custom Field + Property Setter (B-MET-1/2)]")
+    s,b = req("POST","/api/resource/ToDo", {"description":"ferro-verify-meta"}, user=ADMIN)
+    tname = b.get("data",{}).get("name")
+    s,b = req("GET", f"/api/resource/ToDo/{tname}", user=ADMIN)
+    check("admin sees the merged Custom Field column (B-MET-1)", "ferro_cf" in b.get("data",{}), f"keys={list(b.get('data',{}))[:14]}")
+    s,b = req("GET", f"/api/resource/ToDo/{tname}", token=TTOK)
+    check("permlevel-0 reader does NOT see permlevel-1 Custom Field (B-MET-1 permlevel merged)", s==200 and "ferro_cf" not in b.get("data",{}), f"{s} keys={list(b.get('data',{}))[:14]}")
+    # Without the Property Setter, birth_date is a permlevel-0 column visible to the permlevel-0 reader.
+    s,b = req("GET","/api/resource/User/Administrator", token=TTOK)
+    check("Property Setter permlevel override masks birth_date for permlevel-0 reader (B-MET-2)", "birth_date" not in b.get("data",{}), f"keys={list(b.get('data',{}))}")
+    s,b = req("GET","/api/resource/User/Administrator", user=ADMIN)
+    check("admin still sees the Property-Setter field birth_date", "birth_date" in b.get("data",{}), "")
+    if tname: req("DELETE", f"/api/resource/ToDo/{tname}", user=ADMIN)
 
     print("\n[parent-key corruption (FIX-8)]")
     s,b = req("GET", "/api/resource/User/Administrator", user=ADMIN)
