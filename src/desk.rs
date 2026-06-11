@@ -897,7 +897,7 @@ pub fn route_method(
         "frappe.desk.desk_page.getpage" => method_getpage(con, metas, user, &args, apps_dir),
 
         // ---- form view ----
-        "frappe.desk.form.load.getdoctype" => method_getdoctype(con, metas, &args),
+        "frappe.desk.form.load.getdoctype" => method_getdoctype(con, metas, &args, apps_dir),
         "frappe.desk.form.load.getdoc" => method_getdoc(con, metas, user, &args),
         "frappe.desk.form.save.savedocs" => method_savedocs(con, metas, user, &args),
         "frappe.client.save" | "frappe.client.insert" => method_client_save(con, metas, user, &args),
@@ -1494,8 +1494,65 @@ fn method_country_timezone_info() -> (u16, Value) {
     }))
 }
 
+/// Concatenated enabled Client Script docs (DB) for a doctype + view ("Form"/"List").
+fn client_scripts(con: &Connection, doctype: &str, view: &str) -> String {
+    let mut out = String::new();
+    if let Ok(mut stmt) = con.prepare(
+        "SELECT script FROM \"tabClient Script\" WHERE dt=?1 AND view=?2 AND COALESCE(enabled,0)=1 ORDER BY name",
+    ) {
+        if let Ok(rows) = stmt.query_map(rusqlite::params![doctype, view], |r| r.get::<_, Option<String>>(0)) {
+            for s in rows.flatten().flatten() {
+                out.push_str("\n\n");
+                out.push_str(&s);
+            }
+        }
+    }
+    out
+}
+
+/// Attach a doctype's client scripts to its meta, mirroring Frappe's `Meta.load_assets`: the Desk
+/// form evals `__js` (its `frappe.ui.form.on(...)` handlers) and the list view evals `__list_js`
+/// (its `frappe.listview_settings[...]`). Without these an app's per-doctype client behavior never
+/// runs — ERPNext lists keep raw docfield column labels / miss default filters, forms miss
+/// controllers + Connections. The app's global bundle (app_include_js) is loaded separately.
+fn attach_client_assets(meta_doc: &mut Value, con: &Connection, apps_dir: Option<&Path>, doctype: &str) {
+    let (mut form_js, mut list_js) = (String::new(), String::new());
+    if let Some(root) = apps_dir.and_then(|a| a.parent()) {
+        if let Some(json) = crate::schema::find_doctype_json(root, doctype) {
+            if let (Some(dir), Some(stem)) =
+                (json.parent(), json.file_stem().and_then(|s| s.to_str()))
+            {
+                let mut add = |buf: &mut String, suffix: &str| {
+                    let p = dir.join(format!("{stem}{suffix}"));
+                    if let Ok(src) = std::fs::read_to_string(&p) {
+                        buf.push_str(&format!("\n\n/* Adding {} */\n\n", p.display()));
+                        buf.push_str(&src);
+                    }
+                };
+                add(&mut form_js, ".js");
+                add(&mut list_js, "_list.js");
+            }
+        }
+    }
+    form_js.push_str(&client_scripts(con, doctype, "Form"));
+    list_js.push_str(&client_scripts(con, doctype, "List"));
+    if let Some(o) = meta_doc.as_object_mut() {
+        if !form_js.trim().is_empty() {
+            o.insert("__js".into(), json!(form_js));
+        }
+        if !list_js.trim().is_empty() {
+            o.insert("__list_js".into(), json!(list_js));
+        }
+    }
+}
+
 /// `frappe.desk.form.load.getdoctype` — the doctype meta the form renderer needs.
-fn method_getdoctype(con: &Connection, metas: &MetaCache, args: &HashMap<String, String>) -> (u16, Value) {
+fn method_getdoctype(
+    con: &Connection,
+    metas: &MetaCache,
+    args: &HashMap<String, String>,
+    apps_dir: Option<&Path>,
+) -> (u16, Value) {
     let doctype = match args.get("doctype") {
         Some(d) => d.clone(),
         None => return (417, json!({"exc_type": "ValidationError", "message": "doctype required"})),
@@ -1507,10 +1564,13 @@ fn method_getdoctype(con: &Connection, metas: &MetaCache, args: &HashMap<String,
     // Build a meta bundle: the DocType plus the meta of every child-table doctype its fields
     // reference (Table / Table MultiSelect). The form's grid + Table MultiSelect controls need
     // these or rendering aborts ("Table MultiSelect requires a Table with atleast one Link field").
-    let main = match build_meta_doc(con, &doctype) {
+    let mut main = match build_meta_doc(con, &doctype) {
         Ok(d) => d,
         Err(e) => return map_orm_err(e),
     };
+    // Mirror Frappe's Meta.load_assets: attach the doctype's __js / __list_js so the form + list
+    // run its client scripts (ERPNext column relabels, default filters, form controllers).
+    attach_client_assets(&mut main, con, apps_dir, &doctype);
     let mut docs = vec![main.clone()];
     let mut seen: HashSet<String> = HashSet::new();
     seen.insert(doctype.clone());
