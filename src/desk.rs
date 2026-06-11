@@ -80,6 +80,9 @@ pub struct Desk {
     installed_apps: Vec<String>,
     /// Baseline bootinfo snapshot (captured once from a real site), patched per request.
     boot_template: Value,
+    /// The assets manifest (assets.json) → injected into `boot.assets_json` so client-side
+    /// `frappe.require()` can resolve bundle names (lazy bundles, listview JS, etc.).
+    assets_json: Value,
     /// Precomputed `<head>`/`<body>` HTML fragments for the shell.
     html_shell: HtmlShell,
 }
@@ -103,6 +106,126 @@ const APP_INCLUDE_ICONS: &[&str] = &[
     "/assets/frappe/icons/espresso/icons.svg",
     "/assets/frappe/icons/desktop_icons/alphabets.svg",
 ];
+
+/// Extract every string literal from a snippet of Python (single/double quoted, no escape handling
+/// needed for asset paths). Used to read app_include_* hook values.
+fn extract_quoted(s: &str) -> Vec<String> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c == b'"' || c == b'\'' {
+            let start = i + 1;
+            let mut j = start;
+            while j < bytes.len() && bytes[j] != c {
+                j += 1;
+            }
+            if j > start && j <= bytes.len() {
+                out.push(s[start..j].to_string());
+            }
+            i = j + 1;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Parse a hooks.py top-level `key = "x"` / `key = ["x", "y"]` assignment into its string literals
+/// (accumulating a multi-line list until its brackets balance). Good enough for app_include_js/css.
+fn hook_string_list(hooks_text: &str, key: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut lines = hooks_text.lines();
+    while let Some(line) = lines.next() {
+        let rest = match line.strip_prefix(key) {
+            Some(r) => r.trim_start(),
+            None => continue,
+        };
+        if !rest.starts_with('=') || rest.starts_with("==") {
+            continue;
+        }
+        let mut buf = rest[1..].to_string();
+        while buf.matches('[').count() > buf.matches(']').count() {
+            match lines.next() {
+                Some(n) => {
+                    buf.push(' ');
+                    buf.push_str(n);
+                }
+                None => break,
+            }
+        }
+        out.extend(extract_quoted(&buf));
+    }
+    out
+}
+
+/// Resolve an app bundle name (e.g. "erpnext.bundle.js") to its served URL: an explicit /assets or
+/// http path passes through; else the assets manifest; else glob `<app>/dist/<ext>/<stem>.*.<ext>`
+/// in the served tree. Returns None when the bundle isn't built/staged (so we emit no dead <script>).
+fn resolve_app_asset(
+    app: &str,
+    name: &str,
+    ext: &str,
+    assets_dir: &Path,
+    asset_map: &HashMap<String, String>,
+) -> Option<String> {
+    if name.starts_with("/assets") || name.starts_with("http") {
+        return Some(name.to_string());
+    }
+    if let Some(p) = asset_map.get(name) {
+        return Some(p.clone());
+    }
+    let stem = name.strip_suffix(&format!(".{ext}")).unwrap_or(name); // "erpnext.bundle"
+    let dir = assets_dir.join(app).join("dist").join(ext);
+    let (prefix, suffix) = (format!("{stem}."), format!(".{ext}"));
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            if let Some(f) = e.file_name().to_str() {
+                if f.starts_with(&prefix) && f.ends_with(&suffix) {
+                    return Some(format!("/assets/{app}/dist/{ext}/{f}"));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Each installed (non-frappe) app's app_include_js / app_include_css bundle URLs, resolved. The
+/// meta-driven Desk otherwise never runs an app's client JS (controllers, listview_settings, form
+/// scripts), so e.g. ERPNext lists keep raw docfield labels and forms have empty Connections.
+fn app_includes(
+    apps_dir: Option<&Path>,
+    installed_apps: &[String],
+    assets_dir: &Path,
+    asset_map: &HashMap<String, String>,
+) -> (Vec<String>, Vec<String>) {
+    let (mut js, mut css) = (Vec::new(), Vec::new());
+    let apps_dir = match apps_dir {
+        Some(d) => d,
+        None => return (js, css),
+    };
+    for app in installed_apps {
+        if app == "frappe" {
+            continue;
+        }
+        let text = match std::fs::read_to_string(apps_dir.join(app).join(app).join("hooks.py")) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        for name in hook_string_list(&text, "app_include_js") {
+            if let Some(u) = resolve_app_asset(app, &name, "js", assets_dir, asset_map) {
+                js.push(u);
+            }
+        }
+        for name in hook_string_list(&text, "app_include_css") {
+            if let Some(u) = resolve_app_asset(app, &name, "css", assets_dir, asset_map) {
+                css.push(u);
+            }
+        }
+    }
+    (js, css)
+}
 
 impl Desk {
     /// Build Desk state. `assets_dir` is `<bench>/sites/assets`. Falls back to vendored
@@ -137,16 +260,27 @@ impl Desk {
             }
         };
 
-        let css_tags = APP_INCLUDE_CSS
+        // Frappe's own bundles, then each installed app's app_include_* bundles (erpnext.bundle.js …)
+        // so the app's client JS — controllers, listview_settings, form scripts — actually runs.
+        let (app_js, app_css) = app_includes(apps_dir.as_deref(), &installed_apps, &assets_dir, &asset_map);
+
+        let mut css_urls: Vec<String> = APP_INCLUDE_CSS.iter().map(|c| resolve(c)).collect();
+        css_urls.extend(app_css);
+        let css_tags = css_urls
             .iter()
-            .map(|c| format!("<link type=\"text/css\" rel=\"stylesheet\" href=\"{}\">", resolve(c)))
+            .map(|u| format!("<link type=\"text/css\" rel=\"stylesheet\" href=\"{u}\">"))
             .collect::<Vec<_>>()
             .join("\n");
-        let js_tags = APP_INCLUDE_JS
+
+        let mut js_urls: Vec<String> = APP_INCLUDE_JS.iter().map(|c| resolve(c)).collect();
+        js_urls.extend(app_js);
+        let js_tags = js_urls
             .iter()
-            .map(|c| format!("<script type=\"text/javascript\" src=\"{}\"></script>", resolve(c)))
+            .map(|u| format!("<script type=\"text/javascript\" src=\"{u}\"></script>"))
             .collect::<Vec<_>>()
             .join("\n");
+
+        let assets_json = serde_json::to_value(&asset_map).unwrap_or(Value::Null);
         // include_icons emits a fetch() that injects the SVG sprite into #all-symbols.
         let icon_tags = APP_INCLUDE_ICONS
             .iter()
@@ -166,6 +300,7 @@ impl Desk {
             apps_dir,
             installed_apps,
             boot_template,
+            assets_json,
             html_shell: HtmlShell {
                 css_tags,
                 js_tags,
@@ -226,6 +361,9 @@ impl Desk {
             o.insert("setup_complete".into(), json!(complete));
             o.insert("server_date".into(), json!(util::now_date()));
             o.insert("time_zone".into(), o.get("time_zone").cloned().unwrap_or(json!("UTC")));
+            // Populate boot.assets_json (empty in ferro's frozen snapshot) so frappe.require() can
+            // resolve bundle names to their hashed dist paths client-side.
+            o.insert("assets_json".into(), self.assets_json.clone());
             if complete {
                 // A `home_page` of "setup-wizard" on a complete site bounces to the (now hidden)
                 // wizard, which redirects back -> reload loop. Point it at the "Workspaces" standard
