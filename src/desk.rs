@@ -435,6 +435,13 @@ impl Desk {
         .and_then(|v| v.as_array().cloned())
         .unwrap_or_default();
 
+        // Frappe drops the default "Welcome Workspace" onboarding page once a site has real
+        // workspaces (it's only the fallback for an empty site). Mirror that so an installed app's
+        // workspace list matches stock Frappe (the reference shows 18, ferro was showing 19).
+        if page_arr.len() > 1 {
+            page_arr.retain(|p| p.get("name").and_then(|v| v.as_str()) != Some("Welcome Workspace"));
+        }
+
         // 2. module -> app, seeded from Module Def then filled from each workspace's own `app` column
         //    (Module Def is frequently missing the installed app's modules on a native install).
         let mut mod_app: HashMap<String, String> = HashMap::new();
