@@ -509,6 +509,13 @@ fn upsert_doc_row(
         put(k, v.clone(), &mut col_names, &mut values);
     }
 
+    // The frozen frappe-core seed tables (tabDocType, tabDocField, tabDocPerm, …) were carved WITHOUT
+    // a PRIMARY KEY on `name` (only secondary indexes), so "INSERT OR REPLACE" has no conflict target
+    // and would *append* a duplicate row when a record is re-imported (e.g. `migrate` re-syncs every
+    // app's doctypes). Delete any existing row(s) for this name first, making the write a true upsert
+    // on every table — PK or not — and self-healing any duplicates a prior sync already created.
+    con.execute(&format!("DELETE FROM {} WHERE name=?1", quote_ident(table)), params![name])?;
+
     let placeholders: Vec<String> = (1..=col_names.len()).map(|i| format!("?{i}")).collect();
     let quoted: Vec<String> = col_names.iter().map(|c| quote_ident(c)).collect();
     let sql = format!(
@@ -557,6 +564,74 @@ fn insert_child_row(
         .map(str::to_string)
         .unwrap_or_else(|| format!("{}_{}", scrub(parent), idx));
     upsert_doc_row(con, table, &name, cobj, Some((parent, parenttype, parentfield, idx)))
+}
+
+/// A doctype's child-table fields: (fieldname, child doctype) for every Table / Table MultiSelect
+/// field, read from the already-synced tabDocField rows.
+fn child_table_fields(con: &Connection, doctype: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = con.prepare(
+        "SELECT fieldname, options FROM \"tabDocField\" WHERE parent=?1 \
+         AND fieldtype IN ('Table','Table MultiSelect') AND options IS NOT NULL AND options<>''",
+    ) {
+        if let Ok(rows) = stmt.query_map(params![doctype], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        }) {
+            for row in rows.flatten() {
+                out.push(row);
+            }
+        }
+    }
+    out
+}
+
+/// Import a single non-DocType record fixture (Report, Print Format, Number Card, Web Form, …) into
+/// its table + child tables, idempotently (INSERT OR REPLACE). The target doctype is taken from the
+/// JSON's `doctype`; its child-table fields are discovered from the synced DocFields. Records whose
+/// table (or a child table) isn't installed are skipped. Returns Ok(true) if the main row was
+/// written. This is the file-fixture half of Frappe's `sync_for` — the part that needs no Python.
+pub fn import_record(con: &Connection, doc: &Value) -> Result<bool, SchemaError> {
+    let obj = match doc.as_object() {
+        Some(o) => o,
+        None => return Ok(false),
+    };
+    let doctype = match obj.get("doctype").and_then(|v| v.as_str()) {
+        Some(d) => d,
+        None => return Ok(false),
+    };
+    if doctype == "DocType" {
+        return Ok(false); // DocTypes go through import_doctype (creates the table too)
+    }
+    let name = match obj.get("name").and_then(|v| v.as_str()) {
+        Some(n) => n.to_string(),
+        None => return Ok(false),
+    };
+    let table = format!("tab{doctype}");
+    if !table_exists(con, &table) {
+        return Ok(false); // the record's doctype isn't installed on this site
+    }
+    upsert_doc_row(con, &table, &name, obj, None)?;
+    for (fieldname, child_dt) in child_table_fields(con, doctype) {
+        let child_table = format!("tab{child_dt}");
+        if !table_exists(con, &child_table) {
+            continue;
+        }
+        con.execute(
+            &format!(
+                "DELETE FROM {} WHERE parent=?1 AND parentfield=?2 AND parenttype=?3",
+                quote_ident(&child_table)
+            ),
+            params![name, fieldname, doctype],
+        )?;
+        if let Some(arr) = obj.get(&fieldname).and_then(|v| v.as_array()) {
+            for (i, child) in arr.iter().enumerate() {
+                if let Some(cobj) = child.as_object() {
+                    insert_child_row(con, &child_table, &name, doctype, &fieldname, i + 1, cobj)?;
+                }
+            }
+        }
+    }
+    Ok(true)
 }
 
 // rusqlite ToSql for serde_json::Value (text/int/real/bool/null) — used by the importer.
