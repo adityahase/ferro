@@ -29,6 +29,16 @@ for sub in dist images icons sounds; do
   [ -e "$A/frappe/$sub" ] && cp -rL "$A/frappe/$sub" "$OUT/frappe/$sub"
 done
 
+# Web fonts: the bundled desk/website CSS references /assets/frappe/css/fonts/{inter,fontawesome}/*
+# (the Inter UI font + the FontAwesome icon font). These live under public/css, which we otherwise
+# skip — without them the Desk renders in a fallback system font and logs a 404 per face on every
+# page, a visible divergence from stock Frappe. Ship just the fonts subtree (not the rest of css/,
+# which is already bundled into dist/).
+if [ -e "$A/frappe/css/fonts" ]; then
+  mkdir -p "$OUT/frappe/css"
+  cp -rL "$A/frappe/css/fonts" "$OUT/frappe/css/fonts"
+fi
+
 # App SPAs: stage every other app's built public/ tree wholesale (dereferenced), so
 # /assets/<app>/frontend/... (and manifest/icons) resolve for the frappe-ui frontends.
 for d in "$A"/*/; do
