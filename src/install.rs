@@ -17,6 +17,73 @@ use std::path::{Path, PathBuf};
 pub struct SyncReport {
     pub synced: usize,
     pub skipped: usize,
+    pub fixtures: usize,
+}
+
+/// Module record-fixture folders (Frappe's `<module>/<type>/<record>/<record>.json` layout) that
+/// ferro imports natively. `doctype` is excluded (handled by the schema sync, which also creates the
+/// table); `workspace`/`dashboard_chart`/`number_card`/`dashboard` are excluded here because the
+/// signup provisioning imports those via dedicated helpers — everything else is a plain record that
+/// a real `install-app` would load via `sync_for` and the native path previously dropped.
+const FIXTURE_TYPE_DIRS: &[&str] = &[
+    "report",
+    "print_format",
+    "web_form",
+    "notification",
+    "print_style",
+    "email_template",
+    "web_template",
+    "web_page",
+    "onboarding_step",
+    "module_onboarding",
+    "form_tour",
+];
+
+/// All `<module>/<type>/<record>/<record>.json` record fixtures under the app (type in
+/// FIXTURE_TYPE_DIRS).
+fn app_fixture_files(bench_root: &Path, app: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    collect_fixture_files(&app_root(bench_root, app), &mut out, 6);
+    out.sort();
+    out
+}
+
+fn collect_fixture_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth == 0 {
+        return;
+    }
+    let rd = match std::fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let nm = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+        if matches!(nm.as_str(), "doctype" | "node_modules" | "public" | "www" | "tests") {
+            continue;
+        }
+        if FIXTURE_TYPE_DIRS.contains(&nm.as_str()) {
+            // each <record>/<record>.json under a fixture-type dir is one record to import
+            if let Ok(recs) = std::fs::read_dir(&p) {
+                for s in recs.flatten() {
+                    let sp = s.path();
+                    if sp.is_dir() {
+                        if let Some(rn) = sp.file_name().and_then(|n| n.to_str()) {
+                            let json = sp.join(format!("{rn}.json"));
+                            if json.is_file() {
+                                out.push(json);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            collect_fixture_files(&p, out, depth - 1);
+        }
+    }
 }
 
 fn app_root(bench_root: &Path, app: &str) -> PathBuf {
@@ -168,7 +235,27 @@ pub fn sync_app(
         )?;
         synced += 1;
     }
-    Ok(SyncReport { synced, skipped })
+
+    // Import the app's non-DocType record fixtures (Report, Print Format, Web Form, Notification, …).
+    // A real `install-app` loads these through `sync_for`; the native path imported only DocTypes, so
+    // installed apps had e.g. zero of ERPNext's ~183 reports / 44 print formats. import_record is
+    // INSERT-OR-REPLACE, so this is idempotent and safe to re-run via `migrate`.
+    let mut fixtures = 0usize;
+    for file in app_fixture_files(bench_root, app) {
+        let bytes = match std::fs::read(&file) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let doc: Value = match serde_json::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Ok(true) = schema::import_record(con, &doc) {
+            fixtures += 1;
+        }
+    }
+
+    Ok(SyncReport { synced, skipped, fixtures })
 }
 
 /// Does the app's hooks.py declare any install-time hook that needs Python to run?
@@ -241,6 +328,30 @@ fn add_to_installed_apps(con: &Connection, site_dir: &Path, app: &str) -> Result
             let mut s = String::new();
             crate::bench::write_config_json(&Value::Object(cfg), &mut s);
             let _ = std::fs::write(&cfg_path, s);
+        }
+    }
+    Ok(())
+}
+
+/// Ensure every app in the site's `site_config.json` `installed_apps` is also recorded in the DB
+/// installed_apps list (Frappe's source of truth). ferro `serve` trusts site_config, so an app can be
+/// installed + served while missing from the DB list — e.g. a Python-delegated ERPNext install that
+/// never updated the ferro-side bookkeeping. That gap makes `migrate` silently skip the app (and its
+/// schema/fixture sync). Reconcile so the DB list covers everything actually being served.
+pub fn reconcile_installed_apps(con: &Connection, site_dir: &Path) -> Result<(), SchemaError> {
+    let cfg_apps: Vec<String> = std::fs::read_to_string(site_dir.join("site_config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Map<String, Value>>(&t).ok())
+        .and_then(|m| {
+            m.get("installed_apps").and_then(|v| v.as_array()).map(|a| {
+                a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
+            })
+        })
+        .unwrap_or_default();
+    let db_apps = crate::bench::installed_apps_of(con);
+    for app in cfg_apps {
+        if !db_apps.iter().any(|a| a == &app) {
+            add_to_installed_apps(con, site_dir, &app)?;
         }
     }
     Ok(())
@@ -323,7 +434,13 @@ pub struct MigrateReport {
 
 /// Native migrate: schema-sync every installed app (md5-gated). The full schema sync subsumes every
 /// `reload_doc` patch; remaining data patches / after_migrate hooks are returned for a Python pass.
-pub fn migrate_site(con: &Connection, bench_root: &Path) -> Result<MigrateReport, SchemaError> {
+pub fn migrate_site(
+    con: &Connection,
+    site_dir: &Path,
+    bench_root: &Path,
+) -> Result<MigrateReport, SchemaError> {
+    // Cover every app actually served (site_config), not just those the DB happens to list.
+    reconcile_installed_apps(con, site_dir)?;
     let apps = crate::bench::installed_apps_of(con);
     let mut per_app = Vec::new();
     let mut python_patches = Vec::new();

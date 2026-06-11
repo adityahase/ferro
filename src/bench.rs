@@ -1239,10 +1239,11 @@ fn cmd_install_app(g: &GlobalOpts, rest: &[String]) -> i32 {
             match crate::install::install_app(&con, site, &root, app, force) {
                 Ok(crate::install::InstallOutcome::Installed(r)) => {
                     println!(
-                        "Installed {app} on {}: {} doctype(s) synced, {} unchanged",
+                        "Installed {app} on {}: {} doctype(s) synced, {} unchanged, {} fixture(s)",
                         site_name(site),
                         r.synced,
-                        r.skipped
+                        r.skipped,
+                        r.fixtures
                     );
                 }
                 Ok(crate::install::InstallOutcome::AlreadyInstalled) => {
@@ -1288,7 +1289,7 @@ fn cmd_migrate(g: &GlobalOpts, rest: &[String]) -> i32 {
         update_config_file(&cfg, "maintenance_mode", Some(json!(1))).ok();
 
         let con = open_conn(&resolve_db_path(&site.to_string_lossy()));
-        match crate::install::migrate_site(&con, &root) {
+        match crate::install::migrate_site(&con, site, &root) {
             Ok(rep) => {
                 let synced: usize = rep.per_app.iter().map(|(_, r)| r.synced).sum();
                 let skipped: usize = rep.per_app.iter().map(|(_, r)| r.skipped).sum();
