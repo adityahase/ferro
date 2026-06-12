@@ -858,6 +858,22 @@ pub fn route_method(
         "frappe.desk.listview.get_list_settings"
         | "frappe.desk.doctype.list_view_settings.list_view_settings.get" => (200, json!({})),
         "frappe.desk.listview.get_group_by_count" => message(json!([])),
+
+        // ---- tree view (NestedSet doctypes: Item Group, Customer/Supplier Group, Territory,
+        // Account, Cost Center, Warehouse, …) — without this the Tree view pops "Not found".
+        // Item Group / Customer Group / Supplier Group / Territory use the generic frappe method;
+        // Account / Cost Center / Warehouse / Company / Department override get_tree_nodes with
+        // an erpnext.* whitelisted method. On a pure-Rust tenant those would 404, so serve them
+        // from the same native NestedSet walk (value/title/expandable — enough to render & navigate;
+        // the Python versions add display-only extras like account balance). ----
+        "frappe.desk.treeview.get_children"
+        | "erpnext.accounts.utils.get_children"
+        | "erpnext.stock.doctype.warehouse.warehouse.get_children"
+        | "erpnext.setup.doctype.company.company.get_children"
+        | "erpnext.setup.doctype.department.department.get_children" => {
+            method_get_children(con, metas, user, &args)
+        }
+
         "frappe.model.utils.user_settings.get" => message(json!("{}")),
         "frappe.model.utils.user_settings.save" => message(Value::Null),
 
@@ -1324,6 +1340,71 @@ fn method_get_link_title(con: &Connection, metas: &MetaCache, args: &HashMap<Str
         }
     }
     message(json!(docname))
+}
+
+/// `frappe.desk.treeview.get_children` — the immediate children of a NestedSet node. Mirrors
+/// frappe.desk.treeview._get_children: rows where IFNULL(parent_<scrub(doctype)>,'')=parent and
+/// docstatus<2, optionally filtering disabled=0, returned as [{value,title,expandable}]. ERPNext's
+/// Item Group / Account / Cost Center / Territory / Warehouse Tree views all call this.
+fn method_get_children(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+    let doctype = match args.get("doctype") {
+        Some(d) if !d.is_empty() => d.clone(),
+        _ => return message(json!([])),
+    };
+    let parent = args.get("parent").cloned().unwrap_or_default();
+    let include_disabled = matches!(
+        args.get("include_disabled").map(|s| s.as_str()),
+        Some("1") | Some("true") | Some("True") | Some("yes")
+    );
+    let meta = match get_meta(metas, con, &doctype) {
+        Ok(m) => m,
+        Err(_) => return message(json!([])),
+    };
+    // No read access -> empty (never an error dialog), mirroring search_link.
+    if read_perm(con, &meta, user).is_err() {
+        return message(json!([]));
+    }
+    let parent_field = format!("parent_{}", scrub(&doctype));
+    if !meta.has_column(&parent_field) {
+        return message(json!([])); // not actually a tree DocType
+    }
+    // Identifiers come from the trusted schema; `parent` is bound as a parameter.
+    let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
+    let table_q = q(&meta.table);
+    let pf_q = q(&parent_field);
+    let title_field = meta
+        .title_field
+        .clone()
+        .filter(|t| t != "name" && !t.is_empty() && meta.has_column(t));
+    let title_sel = match &title_field {
+        Some(tf) => q(tf),
+        None => "name".to_string(),
+    };
+    let expandable_sel = if meta.has_column("is_group") { q("is_group") } else { "0".to_string() };
+    let mut sql = format!(
+        "SELECT name, {title_sel} AS _t, {expandable_sel} AS _e FROM {table_q} WHERE IFNULL({pf_q},'')=?1"
+    );
+    if meta.has_column("docstatus") {
+        sql.push_str(" AND IFNULL(docstatus,0)<2");
+    }
+    if meta.has_column("disabled") && !include_disabled {
+        sql.push_str(" AND IFNULL(disabled,0)=0");
+    }
+    sql.push_str(" ORDER BY name");
+    let mut stmt = match con.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return message(json!([])),
+    };
+    let mapped = stmt.query_map(rusqlite::params![parent], |r| {
+        let name: String = r.get(0)?;
+        let title: Option<String> = r.get(1)?;
+        let expandable: i64 = r.get::<_, Option<i64>>(2)?.unwrap_or(0);
+        Ok(json!({ "value": name, "title": title, "expandable": expandable }))
+    });
+    match mapped {
+        Ok(iter) => message(Value::Array(iter.filter_map(|r| r.ok()).collect())),
+        Err(_) => message(json!([])),
+    }
 }
 
 fn method_search_link(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
