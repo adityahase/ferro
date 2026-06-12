@@ -423,6 +423,41 @@ def run_after_install(apps_json):
     return json.dumps({"ran": done, "errors": errors})
 
 
+def _seed_account_categories():
+    """ERPNext seeds the ~29 Account Category masters from a migrate-time data patch
+    (sync_financial_report_templates -> import_account_categories). ferro's migrate doesn't run
+    Python patches, so do it here: the Standard chart references categories by name (Account's
+    account_category Link), so they MUST exist before create_charts() or every Account insert
+    fails link validation. Idempotent; best-effort."""
+    try:
+        path = frappe.get_app_path(
+            "erpnext", "accounts", "financial_report_template", "account_categories.json"
+        )
+        with open(path) as f:
+            cats = json.load(f)
+    except Exception as e:
+        if os.environ.get("FERRO_TRACE"):
+            print("[ferro] account categories fixture unreadable:", e)
+        return 0
+    n = 0
+    for cat in cats:
+        name = cat.get("account_category_name")
+        if not name:
+            continue
+        try:
+            doc = frappe.get_doc(dict(cat, doctype="Account Category", name=name))
+            doc.flags.ignore_mandatory = True
+            doc.flags.ignore_links = True  # parent_account_category may precede its parent row
+            doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
+            n += 1
+        except frappe.exceptions.NameError:
+            pass
+        except Exception as e:
+            if os.environ.get("FERRO_TRACE"):
+                print("[ferro] account category seed failed:", name, e)
+    return n
+
+
 def run_setup_wizard(args_json):
     """Run ERPNext's programmatic setup_complete(args) so a fresh site gets a Company + Chart of
     Accounts + defaults (the interactive wizard's outcome). Once a Company exists, ERPNext reports
@@ -437,8 +472,9 @@ def run_setup_wizard(args_json):
     if fn is None:
         return json.dumps({"ok": False, "error": "setup_complete not found"})
     try:
+        seeded = _seed_account_categories()
         fn(args)
-        return json.dumps({"ok": True})
+        return json.dumps({"ok": True, "account_categories": seeded})
     except Exception as e:
         if os.environ.get("FERRO_TRACE"):
             traceback.print_exc()
