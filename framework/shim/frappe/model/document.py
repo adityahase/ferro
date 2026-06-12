@@ -49,7 +49,28 @@ class BaseDocument:
         # Only called when normal lookup fails: treat unknown non-dunder names as unset fields.
         if key.startswith("__") and key.endswith("__"):
             raise AttributeError(key)
+        # A missing child-table field must read as an empty list — real Frappe initialises every
+        # Table column to [], so controllers iterating `for row in self.<table>:` don't hit None
+        # (ERPNext's Mode of Payment / Customer Group / Supplier Group / Item validators do this).
+        if not key.startswith("_") and key in self._table_meta_fields():
+            rows = []
+            self.__dict__[key] = rows
+            self.__dict__.setdefault("_table_fieldnames", set()).add(key)
+            return rows
         return None
+
+    def _table_meta_fields(self):
+        """This doc's Table / Table MultiSelect fieldnames (from meta, cached per instance)."""
+        cached = self.__dict__.get("_table_meta_set")
+        if cached is None:
+            cached = set()
+            if self.__dict__.get("doctype"):
+                try:
+                    cached = {f["fieldname"] for f in self.meta.get_table_fields()}
+                except Exception:
+                    cached = set()
+            self.__dict__["_table_meta_set"] = cached
+        return cached
 
     # `doc.flags` is a mutable namespace controllers freely mutate (doc.flags.ignore_mandatory =
     # True). A property (data descriptor) guarantees it's always a frappe._dict, even if a field
@@ -73,6 +94,14 @@ class BaseDocument:
             # get(filters) over a child table is uncommon; return matching children
             return self._get_children_filtered(key)
         val = self.__dict__.get(key, default)
+        if val is None and isinstance(key, str) and not key.startswith("_") \
+                and key in self._table_meta_fields():
+            # Missing child table -> [] (same as attribute access). Controllers do
+            # `for row in self.get("taxes"):` (ERPNext Item Group / Item) and must not hit None.
+            val = []
+            self.__dict__[key] = val
+            self.__dict__.setdefault("_table_fieldnames", set()).add(key)
+            return val
         return val if val is not None else default
 
     def set(self, key, value, as_value=False):
@@ -245,6 +274,15 @@ class Document(BaseDocument):
             return None
         return _rt.get_value(self.get("doctype"), self.get("name"), fieldname)
 
+    def validate_from_to_dates(self, from_date_field, to_date_field):
+        """Real Frappe Document helper: throw if from-date is after to-date. ERPNext's Fiscal Year
+        / date-range controllers call it from validate(); without it the call resolved to None()."""
+        from frappe.utils import getdate
+        fd, td = self.get(from_date_field), self.get(to_date_field)
+        if fd and td and getdate(fd) > getdate(td):
+            import frappe
+            frappe.throw("{0} must be on or before {1}".format(from_date_field, to_date_field))
+
     # ---- run a controller method (+ does NOT itself fire hooks; ferro driver does) ----
     def run_method(self, method, *args, **kwargs):
         fn = getattr(self, method, None)
@@ -255,11 +293,49 @@ class Document(BaseDocument):
     def _validate(self):
         return None
 
+    def _autoname_local(self, set_name=None):
+        """Assign self.name from the autoname rule BEFORE validate runs. Real Frappe calls
+        set_new_name() ahead of validate, so controllers that read self.name during validation
+        (e.g. Mode of Payment's POS check) see it; ferro otherwise only names in the native insert
+        (after validate). The native insert honours a pre-set name (naming.resolve_name)."""
+        if set_name:
+            self.name = set_name
+            return
+        # A controller-defined autoname() wins — ERPNext's Cost Center / Warehouse / Account build
+        # their "{name} - {abbr}" / numbered names there. Without running it, ferro fell back to a
+        # random hash, so e.g. the root Cost Center wasn't "My Company - MC" and its children's
+        # parent-is-group check failed. Run it exactly as set_new_name does.
+        method = getattr(type(self), "autoname", None)
+        if callable(method):
+            try:
+                method(self)
+            except Exception:
+                pass
+            if self.get("name"):
+                return
+        try:
+            autoname = (self.meta.autoname or "").strip()
+        except Exception:
+            return
+        if autoname.lower().startswith("field:"):
+            val = self.get(autoname.split(":", 1)[1])
+            if val not in (None, ""):
+                self.name = val
+
     # ---- persistence (delegates to ferro_rt) ----
     def insert(self, ignore_permissions=False, ignore_links=False, ignore_if_duplicate=False,
-               ignore_mandatory=False, set_name=None, set_child_names=True, **k):
-        # run the controller's own before-save methods (frappe does this inside insert)
-        for m in ("before_validate", "validate", "before_save", "before_insert"):
+               ignore_mandatory=False, set_name=None, set_child_names=True, ignore_validate=False, **k):
+        # Name the doc first (Frappe's set_new_name precedes validate) so controllers can read it.
+        if not self.get("name"):
+            self._autoname_local(set_name)
+        # run the controller's own before-save methods (frappe does this inside insert). When
+        # ignore_validate is set (kwarg or doc.flags) skip before_validate/validate — ERPNext does
+        # this for pre-validated country tax templates whose account_head is a group account.
+        if ignore_validate or self.flags.get("ignore_validate"):
+            hooks = ("before_save", "before_insert")
+        else:
+            hooks = ("before_validate", "validate", "before_save", "before_insert")
+        for m in hooks:
             self.run_method(m)
         data = self.as_dict()
         # Honour both the explicit kwargs and the controller-set doc.flags (real Frappe ORs them).

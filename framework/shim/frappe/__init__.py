@@ -455,12 +455,19 @@ def cache():
     return _NoCache()
 
 class _NoCache:
+    # ferro has no Redis; every cache op is a no-op. A catch-all keeps the long tail of Redis-y
+    # methods (hdel/hgetall/hkeys/srem/sadd/lpush/expire/…) from AttributeError-ing inside the
+    # post-save hooks ERPNext runs (e.g. Item Group's delete_child_item_groups_key -> hdel).
     def get_value(self, *a, **k): return None
     def set_value(self, *a, **k): return None
     def hget(self, *a, **k): return None
+    def hgetall(self, *a, **k): return {}
     def hset(self, *a, **k): return None
+    def hdel(self, *a, **k): return None
     def delete_value(self, *a, **k): return None
     def delete_key(self, *a, **k): return None
+    def __getattr__(self, name):
+        return lambda *a, **k: None
 
 
 # --------------------------------------------------------------------------- controller resolution
