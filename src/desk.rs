@@ -911,7 +911,7 @@ pub fn route_method(
             }))
         }
         "frappe.desk.query_report.run" | "frappe.desk.query_report.background_enqueue_run" => {
-            message(json!({ "result": [], "columns": [], "message": Value::Null, "chart": Value::Null, "report_summary": [] }))
+            method_query_report_run(con, metas, user, &args)
         }
 
         // ---- workspace (desktop) page content ----
@@ -1340,6 +1340,182 @@ fn method_get_link_title(con: &Connection, metas: &MetaCache, args: &HashMap<Str
         }
     }
     message(json!(docname))
+}
+
+/// `frappe.desk.query_report.run` for SQL-backed **Query Reports**. Mirrors
+/// Report.execute_query_report: run the report's `query` (read-only) with the filter values bound to
+/// its `%(name)s` placeholders, returning `{result, columns}` where columns are the SQL aliases
+/// (the frontend parses the `Label:Type:Width` form). Script/Custom reports need Python, so those —
+/// and any query that doesn't translate cleanly to SQLite — fall back to the empty result (which is
+/// what ferro returned for ALL reports before), so this only ever ADDS data, never an error dialog.
+fn method_query_report_run(con: &Connection, metas: &MetaCache, user: &str, args: &HashMap<String, String>) -> (u16, Value) {
+    let empty = || {
+        message(json!({
+            "result": [], "columns": [], "message": Value::Null,
+            "chart": Value::Null, "report_summary": [], "status": Value::Null, "execution_time": 0
+        }))
+    };
+    let report_name = match args.get("report_name") {
+        Some(r) if !r.is_empty() => r.clone(),
+        _ => return empty(),
+    };
+    let row: Option<(String, Option<String>, Option<String>)> = con
+        .query_row(
+            "SELECT report_type, query, ref_doctype FROM \"tabReport\" WHERE name=?1",
+            rusqlite::params![report_name],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok();
+    let (report_type, query, ref_dt) = match row {
+        Some(v) => v,
+        None => return empty(),
+    };
+    if report_type != "Query Report" {
+        return empty(); // Script / Custom / Report Builder reports need Python
+    }
+    let query = match query {
+        Some(q) if !q.trim().is_empty() => q,
+        _ => return empty(),
+    };
+    // Permission: require read on the report's ref DocType (query reports are role-gated on it).
+    if let Some(dt) = ref_dt.as_deref().filter(|d| !d.is_empty()) {
+        match get_meta(metas, con, dt) {
+            Ok(meta) => {
+                if read_perm(con, &meta, user).is_err() {
+                    return empty();
+                }
+            }
+            Err(_) => return empty(),
+        }
+    }
+    // SELECT-only, single-statement (mirrors check_safe_sql_query's intent).
+    let lc = query.to_lowercase();
+    let trimmed = lc.trim_start();
+    if !trimmed.starts_with("select") && !trimmed.starts_with("with") {
+        return empty();
+    }
+    let probe = format!(" {} ", lc.replace(['\n', '\t', '\r'], " "));
+    const BAD: [&str; 9] = [
+        " insert ", " update ", " delete ", " drop ", " alter ", " create ", " truncate ",
+        " attach ", " pragma ",
+    ];
+    if BAD.iter().any(|b| probe.contains(b)) {
+        return empty();
+    }
+    let filters: Map<String, Value> = args
+        .get("filters")
+        .and_then(|f| serde_json::from_str::<Value>(f).ok())
+        .and_then(|v| match v {
+            Value::Object(m) => Some(m),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let (sql, binds) = translate_report_query(&query, &filters);
+
+    // Read-only execution; on ANY failure fall back to empty (never an error dialog).
+    let mut stmt = match con.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return empty(),
+    };
+    let ncols = stmt.column_count();
+    let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+    let rows_iter = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {
+        let mut out = Vec::with_capacity(ncols);
+        for i in 0..ncols {
+            out.push(sqlite_ref_to_json(r.get_ref(i)?));
+        }
+        Ok(Value::Array(out))
+    });
+    let result: Vec<Value> = match rows_iter {
+        Ok(it) => it.filter_map(|r| r.ok()).collect(),
+        Err(_) => return empty(),
+    };
+    message(json!({
+        "result": result,
+        "columns": columns,
+        "message": Value::Null,
+        "chart": Value::Null,
+        "report_summary": [],
+        "status": Value::Null,
+        "execution_time": 0,
+    }))
+}
+
+/// Translate a Frappe/MySQL report query to SQLite: backtick identifiers -> double-quoted, and
+/// `%(name)s` / `%s` placeholders -> `?`, collecting the bind values (from `filters`) in order.
+fn translate_report_query(q: &str, filters: &Map<String, Value>) -> (String, Vec<rusqlite::types::Value>) {
+    let chars: Vec<char> = q.chars().collect();
+    let mut out = String::with_capacity(q.len());
+    let mut binds: Vec<rusqlite::types::Value> = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '`' {
+            out.push('"');
+            i += 1;
+            continue;
+        }
+        if c == '%' && i + 1 < chars.len() {
+            let n = chars[i + 1];
+            if n == '%' {
+                out.push('%');
+                i += 2;
+                continue;
+            }
+            if n == '(' {
+                let mut j = i + 2;
+                let mut key = String::new();
+                while j < chars.len() && chars[j] != ')' {
+                    key.push(chars[j]);
+                    j += 1;
+                }
+                if j + 1 < chars.len() && chars[j] == ')' && chars[j + 1] == 's' {
+                    out.push('?');
+                    binds.push(json_to_sqlite_value(filters.get(&key)));
+                    i = j + 2;
+                    continue;
+                }
+            }
+            if n == 's' {
+                out.push('?');
+                binds.push(rusqlite::types::Value::Null);
+                i += 2;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    (out, binds)
+}
+
+fn json_to_sqlite_value(v: Option<&Value>) -> rusqlite::types::Value {
+    use rusqlite::types::Value as SV;
+    match v {
+        Some(Value::String(s)) => SV::Text(s.clone()),
+        Some(Value::Bool(b)) => SV::Integer(if *b { 1 } else { 0 }),
+        Some(Value::Number(n)) => {
+            if let Some(i) = n.as_i64() {
+                SV::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                SV::Real(f)
+            } else {
+                SV::Null
+            }
+        }
+        _ => SV::Null,
+    }
+}
+
+fn sqlite_ref_to_json(v: rusqlite::types::ValueRef) -> Value {
+    use rusqlite::types::ValueRef;
+    match v {
+        ValueRef::Null => Value::Null,
+        ValueRef::Integer(i) => json!(i),
+        ValueRef::Real(f) => json!(f),
+        ValueRef::Text(t) => json!(String::from_utf8_lossy(t).to_string()),
+        ValueRef::Blob(_) => Value::Null,
+    }
 }
 
 /// `frappe.desk.treeview.get_children` — the immediate children of a NestedSet node. Mirrors
