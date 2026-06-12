@@ -45,6 +45,13 @@ echo "==> rsync runtimes to $HOST:/opt/ferro/runtime/"
 rsync -avz "$STAGE/ferro" "$HOST:/opt/ferro/runtime/ferro"
 [ -f "$STAGE/ferro-py" ] && rsync -avz "$STAGE/ferro-py" "$HOST:/opt/ferro/runtime/ferro-py"
 
+# The Python shim (frappe/erpnext compat layer the ferro-py runtime imports via FERRO_SHIM) is
+# version-locked to the binary — ship it together so e.g. a new ferro_rt.insert signature and the
+# shim that calls it never drift. Stale .pyc is cleared so the new sources win.
+echo "==> sync shim to $HOST:/opt/ferro/stack/framework/shim/"
+rsync -avz --delete --exclude='__pycache__' "$REPO/framework/shim/" "$HOST:/opt/ferro/stack/framework/shim/"
+ssh "$HOST" 'find /opt/ferro/stack/framework/shim -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true'
+
 echo "==> restart tenant units + smoke-check"
 ssh "$HOST" 'set -e
   chmod +x /opt/ferro/runtime/ferro /opt/ferro/runtime/ferro-py 2>/dev/null || true
