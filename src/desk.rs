@@ -523,11 +523,62 @@ impl Desk {
             }
         }
 
-        // 4. workspace_sidebar_item — one auto-generated sidebar group per module (keyed by
-        //    title.lower(), as `get_sidebar_items` does), each carrying its module's top doctypes +
-        //    workspaces as nav items. This is what the Desk left sidebar actually renders.
+        // 4. workspace_sidebar_item — what the modern Desk left sidebar renders (sidebar.js looks up
+        //    `workspace_sidebar_item[workspace_title]`). Mirror frappe.boot.get_sidebar_items: build
+        //    one group per *curated* `Workspace Sidebar` record (e.g. "Home" = Item/Customer/Supplier/
+        //    Sales Invoice — NOT the module's doctypes), keyed by the record name lower-cased. Only
+        //    modules WITHOUT such a record fall back to an auto-generated per-module group (covers a
+        //    ferro-native site whose schema lacks the Workspace Sidebar fixtures).
         let mut wsi: Map<String, Value> = Map::new();
+        let mut modules_covered: HashSet<String> = HashSet::new();
+        let sidebar_recs = child_rows_query(
+            con,
+            "SELECT name, module, header_icon, module_onboarding, COALESCE(app,'') AS app \
+             FROM \"tabWorkspace Sidebar\" ORDER BY COALESCE(idx, 1e9), name",
+        )
+        .ok()
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+        for sb in &sidebar_recs {
+            let title = page_str(sb, "name");
+            if title.is_empty() {
+                continue;
+            }
+            let module = page_str(sb, "module");
+            if !module.is_empty() {
+                modules_covered.insert(module.clone());
+            }
+            let app = {
+                let a = page_str(sb, "app");
+                if !a.is_empty() {
+                    a
+                } else {
+                    mod_app.get(&module).cloned().unwrap_or_else(|| "frappe".to_string())
+                }
+            };
+            let items: Vec<Value> = match child_rows(con, "tabWorkspace Sidebar Item", &title) {
+                Ok(Value::Array(rows)) => rows.iter().map(sidebar_item_from_row).collect(),
+                _ => Vec::new(),
+            };
+            wsi.insert(
+                title.to_lowercase(),
+                json!({
+                    "label": title,
+                    "items": items,
+                    "header_icon": sb.get("header_icon").cloned().unwrap_or(Value::Null),
+                    "module_onboarding": sb.get("module_onboarding").cloned().unwrap_or(Value::Null),
+                    "module": if module.is_empty() { Value::Null } else { json!(module) },
+                    "app": app,
+                }),
+            );
+        }
+        // Fallback (auto_generate_sidebar_from_module): a per-module group for any module lacking a
+        // Workspace Sidebar record — keyed by module name so its same-named workspace still resolves.
         for module in &module_order {
+            let key = module.to_lowercase();
+            if modules_covered.contains(module) || wsi.contains_key(&key) {
+                continue;
+            }
             let app = mod_app.get(module).cloned().unwrap_or_else(|| "frappe".to_string());
             let mut items: Vec<Value> = Vec::new();
             let mut idx = 1i64;
@@ -543,7 +594,7 @@ impl Desk {
                 idx += 1;
             }
             wsi.insert(
-                module.to_lowercase(),
+                key,
                 json!({
                     "label": module,
                     "items": items,
@@ -2403,6 +2454,31 @@ fn load_page_assets(
 
 /// One `Workspace Sidebar Item` (serialized shape the Desk bundle renders), with the doctype-default
 /// fields the snapshot carries so no field the bundle reads is missing.
+/// Map a `tabWorkspace Sidebar Item` row to the dict shape frappe.boot.get_sidebar_items emits
+/// (so the modern Desk sidebar renders a curated group's items verbatim).
+fn sidebar_item_from_row(r: &Value) -> Value {
+    let s = |k: &str| r.get(k).cloned().unwrap_or(Value::Null);
+    let i = |k: &str| r.get(k).and_then(|v| v.as_i64()).unwrap_or(0);
+    json!({
+        "label": s("label"),
+        "link_to": s("link_to"),
+        "link_type": s("link_type"),
+        "type": s("type"),
+        "icon": s("icon"),
+        "child": i("child"),
+        "collapsible": i("collapsible"),
+        "indent": i("indent"),
+        "keep_closed": i("keep_closed"),
+        "url": s("url"),
+        "show_arrow": i("show_arrow"),
+        "filters": s("filters"),
+        "route_options": s("route_options"),
+        "tab": s("navigate_to_tab"),
+        "open_in_new_tab": i("open_in_new_tab"),
+        "idx": i("idx"),
+    })
+}
+
 fn sidebar_item(label: &str, link_to: &str, link_type: &str, icon: &str, idx: i64) -> Value {
     json!({
         "label": label,
