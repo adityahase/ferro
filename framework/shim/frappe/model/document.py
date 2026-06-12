@@ -16,20 +16,26 @@ from frappe.model.meta import Meta
 from frappe.exceptions import NameError as _DuplicateName  # frappe's, raised on a name conflict
 
 
-def _native_insert(doctype, data, raw=False):
+def _native_insert(doctype, data, raw=False, ignore_mandatory=False, ignore_links=False):
     """Insert via ferro_rt, mapping the native "already exists" ValueError to frappe.NameError —
     real Frappe raises NameError on a duplicate name, and idempotent installers catch exactly that.
-    `raw=True` -> db_insert semantics (no link validation)."""
+    `raw=True` -> db_insert semantics (no validation at all). `ignore_mandatory`/`ignore_links`
+    mirror the matching `doc.insert(...)` flags (ERPNext's COA importer needs ignore_mandatory)."""
     if _rt is None:
         return data
     payload = _json.dumps(data, default=str)
-    fn = getattr(_rt, "raw_insert", None) if raw else None
     try:
-        return fn(doctype, payload) if fn else _rt.insert(doctype, payload)
+        if raw:
+            fn = getattr(_rt, "raw_insert", None)
+            return fn(doctype, payload) if fn else _rt.insert(doctype, payload, True, True)
+        return _rt.insert(doctype, payload, ignore_mandatory, ignore_links)
     except ValueError as e:
         if "already exists" in str(e):
             raise _DuplicateName(str(e))
         raise
+    except TypeError:
+        # Older native module without the flag params — fall back to the 2-arg call.
+        return _rt.insert(doctype, payload)
 
 
 class BaseDocument:
@@ -256,8 +262,11 @@ class Document(BaseDocument):
         for m in ("before_validate", "validate", "before_save", "before_insert"):
             self.run_method(m)
         data = self.as_dict()
+        # Honour both the explicit kwargs and the controller-set doc.flags (real Frappe ORs them).
+        im = bool(ignore_mandatory or self.flags.get("ignore_mandatory"))
+        il = bool(ignore_links or self.flags.get("ignore_links"))
         try:
-            saved = _native_insert(self.get("doctype"), data)
+            saved = _native_insert(self.get("doctype"), data, ignore_mandatory=im, ignore_links=il)
         except _DuplicateName:
             if ignore_if_duplicate:
                 return self

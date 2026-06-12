@@ -680,13 +680,26 @@ thread_local! {
     /// (a raw DB write with no Document validation), used for self-referential bootstrap fixtures
     /// (e.g. ERPNext's UOM conversion data references UOMs not in uom_data.json).
     static SKIP_LINK_VALIDATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// When set, insert skips the required-field check — mirrors Frappe's
+    /// `insert(ignore_mandatory=True)` / `doc.flags.ignore_mandatory`. ERPNext's Chart-of-Accounts
+    /// importer inserts the root Account with an empty (reqd) `parent_account` this way.
+    static SKIP_MANDATORY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Run `f` with link validation suppressed (for `db_insert`-style raw writes).
 pub fn with_skip_link_validation<R>(f: impl FnOnce() -> R) -> R {
-    SKIP_LINK_VALIDATION.with(|c| c.set(true));
+    with_insert_flags(true, false, f)
+}
+
+/// Run `f` with the chosen insert validations suppressed, restoring the prior state afterwards
+/// (so nested/concurrent reuse on the same thread can't leak a flag). `skip_links` mirrors
+/// `ignore_links`/`db_insert`; `skip_mandatory` mirrors `ignore_mandatory`.
+pub fn with_insert_flags<R>(skip_links: bool, skip_mandatory: bool, f: impl FnOnce() -> R) -> R {
+    let prev_l = SKIP_LINK_VALIDATION.with(|c| c.replace(skip_links));
+    let prev_m = SKIP_MANDATORY.with(|c| c.replace(skip_mandatory));
     let r = f();
-    SKIP_LINK_VALIDATION.with(|c| c.set(false));
+    SKIP_LINK_VALIDATION.with(|c| c.set(prev_l));
+    SKIP_MANDATORY.with(|c| c.set(prev_m));
     r
 }
 
@@ -792,17 +805,19 @@ pub fn insert(
             put(&mut cols, &mut binds, &mut seen, &mut values, "idx", SqlValue::Integer(0));
         }
 
-        // Required-field validation (after defaults).
-        for f in &meta.fields {
-            if !f.reqd || f.is_child_table() || f.is_virtual_column() || !meta.has_column(&f.fieldname) {
-                continue;
-            }
-            let present = values.get(&f.fieldname).map(is_nonempty).unwrap_or(false);
-            if !present {
-                return Err(OrmError::Validation(format!(
-                    "Value missing for {}: {}",
-                    meta.name, f.fieldname
-                )));
+        // Required-field validation (after defaults). Skipped under `ignore_mandatory`.
+        if !SKIP_MANDATORY.with(|c| c.get()) {
+            for f in &meta.fields {
+                if !f.reqd || f.is_child_table() || f.is_virtual_column() || !meta.has_column(&f.fieldname) {
+                    continue;
+                }
+                let present = values.get(&f.fieldname).map(is_nonempty).unwrap_or(false);
+                if !present {
+                    return Err(OrmError::Validation(format!(
+                        "Value missing for {}: {}",
+                        meta.name, f.fieldname
+                    )));
+                }
             }
         }
 

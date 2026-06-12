@@ -226,20 +226,30 @@ fn count(doctype: &str, filters_json: Option<&str>) -> PyResult<i64> {
 }
 
 #[pyfunction]
-fn insert(py: Python<'_>, doctype: &str, data_json: &str) -> PyResult<PyObject> {
+#[pyo3(signature = (doctype, data_json, ignore_mandatory=false, ignore_links=false))]
+fn insert(
+    py: Python<'_>,
+    doctype: &str,
+    data_json: &str,
+    ignore_mandatory: bool,
+    ignore_links: bool,
+) -> PyResult<PyObject> {
     with_con(|con| {
         let meta = meta_of(con, doctype)?;
         let data = match parse_json(data_json)? {
             Value::Object(m) => m,
             _ => return Err(PyValueError::new_err("insert data must be an object")),
         };
-        let v = orm::insert(con, &meta, &ReadAcl::all(), &data, &cur_user()).map_err(orm_err)?;
+        let v = orm::with_insert_flags(ignore_links, ignore_mandatory, || {
+            orm::insert(con, &meta, &ReadAcl::all(), &data, &cur_user())
+        })
+        .map_err(orm_err)?;
         Ok(json_to_py(py, &v))
     })
 }
 
-/// Raw insert — Frappe's `db_insert`: no link validation (bootstrap fixtures reference rows that
-/// may not exist yet / at all). Otherwise identical to `insert`.
+/// Raw insert — Frappe's `db_insert`: a low-level DB write with NO Document validation (neither
+/// link existence nor required fields), used for self-referential bootstrap fixtures.
 #[pyfunction]
 fn raw_insert(py: Python<'_>, doctype: &str, data_json: &str) -> PyResult<PyObject> {
     with_con(|con| {
@@ -248,8 +258,10 @@ fn raw_insert(py: Python<'_>, doctype: &str, data_json: &str) -> PyResult<PyObje
             Value::Object(m) => m,
             _ => return Err(PyValueError::new_err("insert data must be an object")),
         };
-        let v = orm::with_skip_link_validation(|| orm::insert(con, &meta, &ReadAcl::all(), &data, &cur_user()))
-            .map_err(orm_err)?;
+        let v = orm::with_insert_flags(true, true, || {
+            orm::insert(con, &meta, &ReadAcl::all(), &data, &cur_user())
+        })
+        .map_err(orm_err)?;
         Ok(json_to_py(py, &v))
     })
 }
