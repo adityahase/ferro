@@ -39,6 +39,12 @@ const FIXTURE_TYPE_DIRS: &[&str] = &[
     "form_tour",
 ];
 
+/// App-level fixture folders that use a FLAT layout (`<folder>/<record>.json` directly, not the
+/// `<record>/<record>.json` subfolder layout). ERPNext ships its curated Desk sidebars this way
+/// (`erpnext/workspace_sidebar/home.json` …); without importing them the modern Desk falls back to
+/// an auto-generated per-module sidebar that doesn't match real Frappe.
+const FLAT_FIXTURE_DIRS: &[&str] = &["workspace_sidebar"];
+
 /// All `<module>/<type>/<record>/<record>.json` record fixtures under the app (type in
 /// FIXTURE_TYPE_DIRS).
 fn app_fixture_files(bench_root: &Path, app: &str) -> Vec<PathBuf> {
@@ -65,7 +71,17 @@ fn collect_fixture_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
         if matches!(nm.as_str(), "doctype" | "node_modules" | "public" | "www" | "tests") {
             continue;
         }
-        if FIXTURE_TYPE_DIRS.contains(&nm.as_str()) {
+        if FLAT_FIXTURE_DIRS.contains(&nm.as_str()) {
+            // each <record>.json directly under the dir is one record to import
+            if let Ok(recs) = std::fs::read_dir(&p) {
+                for s in recs.flatten() {
+                    let sp = s.path();
+                    if sp.is_file() && sp.extension().and_then(|x| x.to_str()) == Some("json") {
+                        out.push(sp);
+                    }
+                }
+            }
+        } else if FIXTURE_TYPE_DIRS.contains(&nm.as_str()) {
             // each <record>/<record>.json under a fixture-type dir is one record to import
             if let Ok(recs) = std::fs::read_dir(&p) {
                 for s in recs.flatten() {
